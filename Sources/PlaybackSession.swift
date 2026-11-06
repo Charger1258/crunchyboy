@@ -127,6 +127,10 @@ struct PlaybackRequest: Identifiable {
                         self.configureCaptions(item, token: token)
                         let duration = item.duration.seconds
                         let position = duration.isFinite ? min(self.resumePosition, max(0, duration - 1)) : self.resumePosition
+                        if position <= 0 {
+                            self.player.play(); self.status = nil
+                            return
+                        }
                         self.player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
                             Task { @MainActor [weak self] in
                                 guard let self, finished, token == self.generation, !self.shuttingDown else { return }

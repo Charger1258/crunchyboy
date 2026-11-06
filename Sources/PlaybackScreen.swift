@@ -1,17 +1,24 @@
 import SwiftUI
 import AVKit
 
-private struct PlayerSurface: UIViewControllerRepresentable {
+private final class VideoCanvas: UIView {
+    override class var layerClass: AnyClass { AVPlayerLayer.self }
+    var videoLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+}
+
+private struct PlayerSurface: UIViewRepresentable {
     let player: AVPlayer
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let controller = AVPlayerViewController()
-        controller.player = player; controller.videoGravity = .resizeAspect
-        controller.showsPlaybackControls = false; controller.allowsPictureInPicturePlayback = false
-        controller.entersFullScreenWhenPlaybackBegins = false
-        controller.view.isUserInteractionEnabled = false
-        return controller
+    func makeUIView(context: Context) -> VideoCanvas {
+        let view = VideoCanvas()
+        view.backgroundColor = .black
+        view.videoLayer.videoGravity = .resizeAspect
+        view.videoLayer.player = player
+        return view
     }
-    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) { if controller.player !== player { controller.player = player } }
+    func updateUIView(_ view: VideoCanvas, context: Context) {
+        if view.videoLayer.player !== player { view.videoLayer.player = player }
+    }
+    static func dismantleUIView(_ view: VideoCanvas, coordinator: ()) { view.videoLayer.player = nil }
 }
 
 struct PlaybackScreen: View {
