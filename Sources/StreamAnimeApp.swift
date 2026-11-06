@@ -18,12 +18,16 @@ struct RootScreen: View {
     @State private var selectedTab = 0
     @State private var playback: PlaybackRequest?
     @State private var fixtureClosed = false
+    @State private var fixturePresentation = false
 
     var body: some View {
         Group {
             #if targetEnvironment(simulator)
             if ProcessInfo.processInfo.arguments.contains("--player-ui-test"), !fixtureClosed {
-                LandscapePlayback(request: PlayerFixture.request, library: library, close: { fixtureClosed = true })
+                Color.black.onAppear { fixturePresentation = true }
+                    .fullScreenCover(isPresented: $fixturePresentation, onDismiss: { fixtureClosed = true }) {
+                        LandscapePlayback(request: PlayerFixture.request, library: library, close: { fixturePresentation = false }).ignoresSafeArea()
+                    }
             } else if profileChosen { mainTabs }
             else { ProfilesScreen(onComplete: { profileChosen = true }) }
             #else
