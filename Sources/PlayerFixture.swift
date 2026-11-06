@@ -10,6 +10,8 @@ enum PlayerFixture {
         let next = Episode(id: "fixture-2", release: title.slug, season: 1, number: 2, name: "Subtitle preference test")
         var request = PlaybackRequest(title: title, episode: first, episodes: [first, next])
         request.fixtureURL = Bundle.main.url(forResource: "player-test", withExtension: "mp4")!
+        // Let native video advance, then hold a stable frame for UI inspection.
+        request.fixturePauseAt = 1
         request.fixtureSubtitles = ["en": "WEBVTT\n\n00:00:00.000 --> 00:00:08.000\nEnglish subtitles are visible.\n\n00:00:08.000 --> 00:00:20.000\nSubtitles remain synchronized after seeking.\n",
                                     "ar": "WEBVTT\n\n00:00:00.000 --> 00:00:20.000\nالترجمة العربية تعمل\n"]
         return request

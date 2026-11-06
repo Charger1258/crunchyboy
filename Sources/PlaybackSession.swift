@@ -11,6 +11,7 @@ struct PlaybackRequest: Identifiable {
     #if targetEnvironment(simulator)
     var fixtureURL: URL? = nil
     var fixtureSubtitles: [String: String]? = nil
+    var fixturePauseAt: Double? = nil
     #endif
 }
 
@@ -53,6 +54,9 @@ struct PlaybackRequest: Identifiable {
     private var lastSave: Double = 0
     private var completed = false
     private var shuttingDown = false
+    #if targetEnvironment(simulator)
+    private var fixturePaused = false
+    #endif
 
     init(request: PlaybackRequest, library: LibraryStore) {
         self.request = request; self.library = library; profile = library.active.id; episode = request.episode
@@ -75,6 +79,9 @@ struct PlaybackRequest: Identifiable {
         if let endedObserver { NotificationCenter.default.removeObserver(endedObserver); self.endedObserver = nil }
         generation = UUID(); let token = generation
         status = "Opening episode…"; error = nil; completed = false
+        #if targetEnvironment(simulator)
+        fixturePaused = false
+        #endif
         resetCaptions(); sourceConfirmed = false; position = 0; duration = 0; buffered = 0; subtitleOffset = 0
         resumePosition = library.resume(episode, profile: profile); lastSave = 0
         task = Task {
@@ -199,6 +206,12 @@ struct PlaybackRequest: Identifiable {
             Task { await SourceHealth.shared.succeeded(source) }
         }
         self.position = position
+        #if targetEnvironment(simulator)
+        if let stop = request.fixturePauseAt, position >= stop, !fixturePaused {
+            fixturePaused = true; player.pause()
+            diagnostic("visual checkpoint reached at \(position)")
+        }
+        #endif
         let total = player.currentItem?.duration.seconds ?? 0
         duration = total.isFinite ? max(0, total) : 0
         isPlaying = player.rate > 0
