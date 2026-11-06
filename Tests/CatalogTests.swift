@@ -47,6 +47,12 @@ final class CatalogTests: XCTestCase {
         XCTAssertEqual(player.src, "https://video.example.org/master.m3u8")
     }
 
+    func testResolverNetworkErrorsDescribeTheFailureWithoutExposingURLs() {
+        XCTAssertTrue(HiAnimeStreamAdapter.networkReason(URLError(.timedOut)).contains("timed out"))
+        XCTAssertTrue(HiAnimeStreamAdapter.networkReason(URLError(.cannotFindHost)).contains("could not be found"))
+        XCTAssertTrue(HiAnimeStreamAdapter.networkReason(URLError(.cannotConnectToHost)).contains("could not be reached"))
+    }
+
     func testPlaybackURLsRequireHTTPSWithoutCredentials() {
         XCTAssertNil(SafeURL.https("http://example.org/a.m3u8"))
         XCTAssertNil(SafeURL.https("https://user:secret@example.org/a.m3u8"))

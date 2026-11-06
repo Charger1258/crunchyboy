@@ -13,20 +13,23 @@ struct HTTPClient {
         session = URLSession(configuration: config)
     }
 
-    func text(_ url: URL, referer: URL? = nil, limit: Int = 8_000_000) async throws -> String {
-        let (data, _) = try await bytes(url, referer: referer, limit: limit)
+    func text(_ url: URL, referer: URL? = nil, limit: Int = 8_000_000, ajax: Bool = false) async throws -> String {
+        let (data, _) = try await bytes(url, referer: referer, limit: limit, ajax: ajax)
         guard let text = String(data: data, encoding: .utf8) else { throw StreamError.invalidResponse }
         return text
     }
 
     func bytes(_ url: URL, referer: URL? = nil, range: String? = nil,
-               limit: Int = 32_000_000) async throws -> (Data, HTTPURLResponse) {
+               limit: Int = 32_000_000, ajax: Bool = false) async throws -> (Data, HTTPURLResponse) {
         guard SafeURL.https(url.absoluteString) != nil else { throw StreamError.insecureURL }
         var request = URLRequest(url: url)
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         if let referer {
             request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
-            if let host = referer.host { request.setValue("https://\(host)", forHTTPHeaderField: "Origin") }
+        }
+        if ajax {
+            request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+            request.setValue("*/*", forHTTPHeaderField: "Accept")
         }
         if let range { request.setValue(range, forHTTPHeaderField: "Range") }
         // Stream into a bounded buffer so an unexpected download cannot exhaust memory.
