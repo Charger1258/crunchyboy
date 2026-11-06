@@ -8,6 +8,10 @@ struct PlaybackRequest: Identifiable {
     let episode: Episode
     let episodes: [Episode]
     var directURL: URL? = nil
+    #if targetEnvironment(simulator)
+    var fixtureURL: URL? = nil
+    var fixtureSubtitles: [String: String]? = nil
+    #endif
 }
 
 @MainActor final class PlaybackSession: ObservableObject {
@@ -17,8 +21,20 @@ struct PlaybackRequest: Identifiable {
     @Published private(set) var error: String?
     @Published private(set) var sourceLabel = ""
     private var captionGroup: AVMediaSelectionGroup?
-    private var captionsReady = false
-    private var lastCaptionSelection: String?
+    @Published private(set) var captionOptions: [CaptionOption] = []
+    @Published private(set) var selectedCaption = "off"
+    @Published private(set) var captionText = ""
+    @Published private(set) var captionNotice: String?
+    @Published private(set) var position: Double = 0
+    @Published private(set) var duration: Double = 0
+    @Published private(set) var buffered: Double = 0
+    @Published private(set) var isPlaying = false
+    @Published private(set) var actualHeight = 0
+    @Published private(set) var qualityHeight = UserDefaults.standard.integer(forKey: "videoMaxHeight")
+    @Published var subtitleOffset: Double = 0
+    private var cues: [SubtitleCue] = []
+    private var captionTask: Task<Void, Never>?
+    private var captionGeneration = UUID()
     private var sourceConfirmed = false
     private let request: PlaybackRequest
     private let library: LibraryStore
@@ -41,7 +57,7 @@ struct PlaybackRequest: Identifiable {
     init(request: PlaybackRequest, library: LibraryStore) {
         self.request = request; self.library = library; profile = library.active.id; episode = request.episode
         player.automaticallyWaitsToMinimizeStalling = true
-        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
+        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.2, preferredTimescale: 600), queue: .main) { [weak self] time in
             Task { @MainActor [weak self] in self?.tick(time.seconds) }
         }
     }
@@ -58,13 +74,23 @@ struct PlaybackRequest: Identifiable {
         if let endedObserver { NotificationCenter.default.removeObserver(endedObserver); self.endedObserver = nil }
         generation = UUID(); let token = generation
         status = "Opening episode…"; error = nil; completed = false
-        captionGroup = nil; captionsReady = false; sourceConfirmed = false
+        resetCaptions(); sourceConfirmed = false; position = 0; duration = 0; buffered = 0; subtitleOffset = 0
         resumePosition = library.resume(episode, profile: profile); lastSave = 0
         task = Task {
             do {
+                #if targetEnvironment(simulator)
+                if request.fixtureURL != nil {
+                    candidates = [ResolvedStream(url: URL(string: "https://fixture.example/master.m3u8")!, referer: URL(string: "https://fixture.example/")!, height: 360, source: "Local player test", subtitles: [
+                        SubtitleTrack(url: URL(string: "https://fixture.example/en.vtt")!, language: "en", label: "English"),
+                        SubtitleTrack(url: URL(string: "https://fixture.example/ar.vtt")!, language: "ar", label: "Arabic")])]
+                } else if let direct = request.directURL {
+                    candidates = [ResolvedStream(url: direct, referer: direct.deletingLastPathComponent(), height: 0, source: "Direct")]
+                } else { candidates = try await resolver.resolve(episode) }
+                #else
                 if let direct = request.directURL {
                     candidates = [ResolvedStream(url: direct, referer: direct.deletingLastPathComponent(), height: 0, source: "Direct")]
                 } else { candidates = try await resolver.resolve(episode) }
+                #endif
                 guard !Task.isCancelled, token == generation else { return }
                 candidateIndex = 0
                 await playCandidate(token)
@@ -77,11 +103,18 @@ struct PlaybackRequest: Identifiable {
     private func playCandidate(_ token: UUID) async {
         guard !shuttingDown, token == generation, candidateIndex < candidates.count else { return }
         do {
-            let local = try await relay.start(candidates[candidateIndex])
+            let local: URL
+            #if targetEnvironment(simulator)
+            if let fixture = request.fixtureURL { local = fixture }
+            else { local = try await relay.start(candidates[candidateIndex]) }
+            #else
+            local = try await relay.start(candidates[candidateIndex])
+            #endif
             let source = candidates[candidateIndex]
-            sourceLabel = source.source + (source.height > 0 ? " · \(source.height)p" : "")
+            sourceLabel = source.source
             guard token == generation, !Task.isCancelled else { return }
             let item = AVPlayerItem(url: local)
+            applyQuality(item)
             player.replaceCurrentItem(with: item)
             observation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
                 Task { @MainActor [weak self] in
@@ -120,13 +153,15 @@ struct PlaybackRequest: Identifiable {
 
     private func retryCandidate(_ token: UUID) {
         guard token == generation, !shuttingDown else { return }
+        let current = player.currentTime().seconds
+        if current.isFinite, current > resumePosition { resumePosition = current; save() }
         generation = UUID(); let nextToken = generation
         observation = nil; startupTimeout?.cancel(); player.pause()
         if candidateIndex < candidates.count {
             let failed = candidates[candidateIndex]
             Task { await SourceHealth.shared.failed(failed) }
         }
-        captionsReady = false; captionGroup = nil; sourceConfirmed = false
+        resetCaptions(); sourceConfirmed = false
         candidateIndex += 1
         guard candidateIndex < candidates.count else {
             status = nil; error = "The video couldn’t start on this device. Try again, or choose another episode."; return
@@ -148,42 +183,129 @@ struct PlaybackRequest: Identifiable {
             let source = candidates[candidateIndex]
             Task { await SourceHealth.shared.succeeded(source) }
         }
-        if captionsReady, let item = player.currentItem, let captionGroup {
-            let selected = item.currentMediaSelection.selectedMediaOption(in: captionGroup)
-            let language = selected.map { $0.extendedLanguageTag ?? $0.locale?.languageCode ?? "und" } ?? "off"
-            if language != lastCaptionSelection {
-                UserDefaults.standard.set(language, forKey: "subtitleLanguage")
-                lastCaptionSelection = language
-            }
+        self.position = position
+        let total = player.currentItem?.duration.seconds ?? 0
+        duration = total.isFinite ? max(0, total) : 0
+        isPlaying = player.rate > 0
+        actualHeight = Int(player.currentItem?.presentationSize.height ?? 0)
+        if let range = player.currentItem?.loadedTimeRanges.last?.timeRangeValue {
+            let end = CMTimeGetSeconds(CMTimeRangeGetEnd(range))
+            buffered = end.isFinite ? max(0, end) : 0
         }
+        captionText = SubtitleDocument.visible(cues, at: position - subtitleOffset)
         if position - lastSave >= 5 { save(); lastSave = position }
+    }
+
+    private func resetCaptions() {
+        captionTask?.cancel(); captionGeneration = UUID()
+        captionGroup = nil; captionOptions = []; selectedCaption = "off"; cues = []; captionText = ""; captionNotice = nil
     }
 
     private func configureCaptions(_ item: AVPlayerItem, token: UUID) {
         Task {
-            guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible), token == generation,
-                  player.currentItem === item else { return }
+            let group = try? await item.asset.loadMediaSelectionGroup(for: .legible)
+            guard token == generation, player.currentItem === item else { return }
             captionGroup = group
+            let source = candidates[candidateIndex]
+            var options = source.subtitles.enumerated().map { index, track in
+                CaptionOption(id: "external-" + String(index), label: track.label, language: track.language, external: track)
+            }
+            if let group {
+                options += group.options.enumerated().map { index, option in
+                    CaptionOption(id: "native-" + String(index), label: option.displayName,
+                                  language: option.extendedLanguageTag ?? option.locale?.languageCode ?? "und", nativeIndex: index)
+                }
+            }
+            captionOptions = options
             let language = UserDefaults.standard.string(forKey: "subtitleLanguage") ?? "en"
-            if language == "off" { item.select(nil, in: group) }
-            else if let option = group.options.first(where: {
-                ($0.extendedLanguageTag ?? $0.locale?.languageCode ?? "").lowercased().hasPrefix(language.lowercased().split(separator: "-").first.map(String.init) ?? language)
-            }) { item.select(option, in: group) }
-            // If the preferred language is absent, retain the preference for the next episode.
-            let selected = item.currentMediaSelection.selectedMediaOption(in: group)
-            lastCaptionSelection = selected.map { $0.extendedLanguageTag ?? $0.locale?.languageCode ?? "und" } ?? "off"
-            captionsReady = true
+            if let preferred = CaptionLanguage.preferred(options, language: language) { selectCaption(preferred.id, remember: false) }
+            else {
+                if let group { item.select(nil, in: group) }
+                if language != "off" { captionNotice = options.isEmpty ? "This source has no subtitle tracks." : "Your preferred subtitle language is unavailable on this source." }
+            }
         }
+    }
+
+    func selectCaption(_ id: String, remember: Bool = true) {
+        captionTask?.cancel(); captionGeneration = UUID(); let token = captionGeneration
+        selectedCaption = id; cues = []; captionText = ""; captionNotice = nil
+        if let captionGroup { player.currentItem?.select(nil, in: captionGroup) }
+        guard let option = captionOptions.first(where: { $0.id == id }) else {
+            if remember { UserDefaults.standard.set("off", forKey: "subtitleLanguage") }
+            return
+        }
+        if remember { UserDefaults.standard.set(CaptionLanguage.normalize(option.language), forKey: "subtitleLanguage") }
+        if let index = option.nativeIndex, let captionGroup, captionGroup.options.indices.contains(index) {
+            player.currentItem?.select(captionGroup.options[index], in: captionGroup); return
+        }
+        guard let track = option.external, candidateIndex < candidates.count else { return }
+        let source = candidates[candidateIndex]
+        captionNotice = "Loading subtitles..."
+        captionTask = Task {
+            do {
+                let text: String
+                #if targetEnvironment(simulator)
+                if let fixture = request.fixtureSubtitles?[track.language] { text = fixture }
+                else {
+                    let headers = source.headers.merging(track.headers) { _, caption in caption }
+                    let (data, _) = try await HTTPClient(timeout: 10).bytes(track.url, referer: source.referer, limit: 3_000_000, headers: headers)
+                    text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) ?? ""
+                }
+                #else
+                let headers = source.headers.merging(track.headers) { _, caption in caption }
+                let (data, _) = try await HTTPClient(timeout: 10).bytes(track.url, referer: source.referer, limit: 3_000_000, headers: headers)
+                text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) ?? ""
+                #endif
+                let parsed = SubtitleDocument.parse(text)
+                try Task.checkCancellation()
+                guard token == captionGeneration else { return }
+                guard !parsed.isEmpty else { throw StreamError.invalidResponse }
+                cues = parsed; captionNotice = nil
+                captionText = SubtitleDocument.visible(parsed, at: position - subtitleOffset)
+            } catch {
+                if !Task.isCancelled, token == captionGeneration { captionNotice = "Subtitles could not load. Choose another track or retry." }
+            }
+        }
+    }
+
+    var captionLabel: String { captionOptions.first { $0.id == selectedCaption }?.label ?? "Off" }
+    var title: String { request.title.name }
+    func setQuality(_ height: Int) {
+        qualityHeight = height; UserDefaults.standard.set(height, forKey: "videoMaxHeight")
+        if let item = player.currentItem { applyQuality(item) }
+    }
+    private func applyQuality(_ item: AVPlayerItem) {
+        item.preferredMaximumResolution = qualityHeight > 0 ? CGSize(width: Double(qualityHeight) * 16/9, height: Double(qualityHeight)) : .zero
+        item.preferredPeakBitRate = 0
+    }
+    func togglePlay() {
+        if player.rate > 0 { player.pause(); isPlaying = false }
+        else { player.play(); isPlaying = true }
+    }
+    func pause() { player.pause(); isPlaying = false }
+    func setSubtitleOffset(_ seconds: Double) {
+        subtitleOffset = seconds
+        captionText = SubtitleDocument.visible(cues, at: position - subtitleOffset)
+    }
+    func seek(to seconds: Double) {
+        guard seconds.isFinite else { return }
+        let total = player.currentItem?.duration.seconds ?? 0
+        let target = max(0, min(seconds, total.isFinite && total > 0 ? total : seconds))
+        position = target
+        captionText = SubtitleDocument.visible(cues, at: target - subtitleOffset)
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
     func skip(_ seconds: Double) {
         let time = player.currentTime().seconds
         guard time.isFinite else { return }
-        let duration = player.currentItem?.duration.seconds ?? .infinity
-        player.seek(to: CMTime(seconds: min(max(0, time + seconds), duration.isFinite ? duration : .infinity), preferredTimescale: 600))
+        seek(to: time + seconds)
     }
 
     private func save() {
+        #if targetEnvironment(simulator)
+        if request.fixtureURL != nil { return }
+        #endif
         guard request.directURL == nil else { return }
         let duration = player.currentItem?.duration.seconds ?? 0
         library.record(profile: profile, title: request.title, episode: episode,
@@ -193,7 +315,7 @@ struct PlaybackRequest: Identifiable {
 
     func close() {
         save(); shuttingDown = true; generation = UUID()
-        task?.cancel(); startupTimeout?.cancel(); player.pause(); player.replaceCurrentItem(with: nil)
+        task?.cancel(); startupTimeout?.cancel(); captionTask?.cancel(); player.pause(); player.replaceCurrentItem(with: nil)
         observation = nil
         if let timeObserver { player.removeTimeObserver(timeObserver); self.timeObserver = nil }
         if let endedObserver { NotificationCenter.default.removeObserver(endedObserver); self.endedObserver = nil }
@@ -201,53 +323,3 @@ struct PlaybackRequest: Identifiable {
     }
 }
 
-private struct NativePlayer: UIViewControllerRepresentable {
-    let player: AVPlayer
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        let view = AVPlayerViewController()
-        view.player = player; view.videoGravity = .resizeAspect; view.showsPlaybackControls = true
-        view.allowsPictureInPicturePlayback = false
-        return view
-    }
-    func updateUIViewController(_ view: AVPlayerViewController, context: Context) { view.player = player }
-}
-
-struct PlaybackScreen: View {
-    @Environment(\.dismiss) private var dismiss
-    @StateObject private var session: PlaybackSession
-    init(request: PlaybackRequest, library: LibraryStore) {
-        _session = StateObject(wrappedValue: PlaybackSession(request: request, library: library))
-    }
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.title2) }.accessibilityLabel("Close player")
-                Text(session.episode.number > 0 ? session.episode.label + " · " + session.episode.name : "Playback test").font(.subheadline).lineLimit(2)
-                Spacer()
-                Button { session.skip(-10) } label: { Image(systemName: "gobackward.10") }.accessibilityLabel("Back 10 seconds")
-                Button { session.skip(10) } label: { Image(systemName: "goforward.10") }.accessibilityLabel("Forward 10 seconds")
-                if session.nextEpisode != nil { Button("Next episode") { session.playNext() }.buttonStyle(.bordered) }
-            }.padding().background(.ultraThinMaterial)
-            ZStack {
-                Color.black
-                NativePlayer(player: session.player)
-                if let status = session.status {
-                    VStack(spacing: 14) { ProgressView().tint(.orange); Text(status).font(.subheadline) }
-                        .padding(24).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                }
-                if let error = session.error {
-                    ContentUnavailableView {
-                        Label("Couldn’t start playback", systemImage: "play.slash")
-                    } description: { Text(error) } actions: { Button("Try again") { session.start() }.buttonStyle(.borderedProminent) }
-                }
-            }
-            if !session.sourceLabel.isEmpty { Text(session.sourceLabel).font(.caption).foregroundStyle(.secondary).padding(8) }
-        }.background(.black).preferredColorScheme(.dark)
-            .onAppear {
-                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
-                try? AVAudioSession.sharedInstance().setActive(true)
-                session.start()
-            }
-            .onDisappear { session.close(); try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation) }
-    }
-}

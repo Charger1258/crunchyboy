@@ -3,6 +3,23 @@
 Native SwiftUI app, installed through SideStore. Catalog requests, source resolution,
 playback and history run on the iPhone. No hosted streaming backend is required.
 
+## Player update (0.4)
+
+- Playback requests a landscape-only orientation using UIKit scene geometry APIs,
+  with portrait restored on exit. The app owns the controls over an aspect-fit video surface.
+- Custom play/pause, timeline, buffered indicator, double-tap/10-second seeking,
+  next episode, adaptive quality ceilings, auto-hiding controls and background pause.
+- Fixed mixed-type gateway subtitle records: Boolean/default flags and nested headers
+  no longer discard all captions. Track-specific allowed headers are preserved.
+- External WebVTT/SRT files are decoded and rendered by the app, synchronized to playback
+  and seeking. Language, off, size, reload and timing controls are available. Language
+  preference carries across episodes; an unavailable language never switches silently.
+- Removed the artificial 24-hour HLS wrapper for external subtitle files. Embedded HLS
+  subtitle tracks can still be selected through the native media selection group.
+- Simulator-only player harness uses a generated local test video and generic English/
+  Arabic caption documents. It is not connected to or substituted for catalog episodes.
+  The test media is removed from the device IPA; fixture code is simulator-only.
+
 ## Mobile update (0.3)
 
 - The profile picker is the initial root screen. Home and catalog requests are not

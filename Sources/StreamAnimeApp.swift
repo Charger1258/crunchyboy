@@ -1,6 +1,7 @@
 import SwiftUI
 
 @main struct StreamAnimeApp: App {
+    @UIApplicationDelegateAdaptor(PlayerAppDelegate.self) private var appDelegate
     @StateObject private var library = LibraryStore()
     var body: some Scene {
         WindowGroup {
@@ -16,11 +17,19 @@ struct RootScreen: View {
     @State private var profileChosen = false
     @State private var selectedTab = 0
     @State private var playback: PlaybackRequest?
+    @State private var fixtureClosed = false
 
     var body: some View {
         Group {
+            #if targetEnvironment(simulator)
+            if ProcessInfo.processInfo.arguments.contains("--player-ui-test"), !fixtureClosed {
+                LandscapePlayback(request: PlayerFixture.request, library: library, close: { fixtureClosed = true })
+            } else if profileChosen { mainTabs }
+            else { ProfilesScreen(onComplete: { profileChosen = true }) }
+            #else
             if profileChosen { mainTabs }
             else { ProfilesScreen(onComplete: { profileChosen = true }) }
+            #endif
         }
     }
 
@@ -46,7 +55,7 @@ struct RootScreen: View {
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) { mobileTabBar }
         .fullScreenCover(isPresented: $profiles) { ProfilesScreen() }
-        .fullScreenCover(item: $playback) { request in PlaybackScreen(request: request, library: library) }
+        .fullScreenCover(item: $playback) { request in LandscapePlayback(request: request, library: library, close: { playback = nil }).ignoresSafeArea() }
     }
 
     private var mobileTabBar: some View {

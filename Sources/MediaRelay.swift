@@ -11,16 +11,13 @@ actor MediaRelay {
     private var reverseRoutes: [URL: String] = [:]
     private var referer: URL?
     private var playbackHeaders: [String: String] = [:]
-    private var subtitles: [SubtitleTrack] = []
-    private var root: URL?
-    private var generated: [String: (Data, String)] = [:]
     private var connections: [UUID: NWConnection] = [:]
     private var requests: [UUID: Task<Void, Never>] = [:]
 
     func start(_ stream: ResolvedStream) async throws -> URL {
         stop()
         referer = stream.referer
-        root = stream.url; playbackHeaders = stream.headers; subtitles = stream.subtitles
+        playbackHeaders = stream.headers
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         let server = try NWListener(using: parameters)
@@ -59,7 +56,7 @@ actor MediaRelay {
         for request in requests.values { request.cancel() }
         for connection in connections.values { connection.cancel() }
         requests.removeAll(); connections.removeAll(); routes.removeAll(); reverseRoutes.removeAll()
-        generated.removeAll(); subtitles = []; root = nil; playbackHeaders = [:]
+        playbackHeaders = [:]
     }
 
     private func route(_ remote: URL) throws -> URL {
@@ -69,23 +66,6 @@ actor MediaRelay {
         let key = UUID().uuidString
         routes[key] = remote; reverseRoutes[remote] = key
         return URL(string: "http://127.0.0.1:\(port.rawValue)/\(key)")!
-    }
-
-    private func local(_ text: String, type: String) throws -> URL {
-        guard let port else { throw StreamError.invalidResponse }
-        let key = UUID().uuidString
-        generated[key] = (Data(text.utf8), type)
-        return URL(string: "http://127.0.0.1:\(port.rawValue)/\(key)")!
-    }
-
-    private func captionGroups() throws -> String {
-        try subtitles.enumerated().map { index, track in
-            let caption = try route(track.url)
-            let playlist = "#EXTM3U\n#EXT-X-TARGETDURATION:86400\n#EXT-X-VERSION:3\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:86400,\n\(caption.absoluteString)\n#EXT-X-ENDLIST\n"
-            let url = try local(playlist, type: "application/vnd.apple.mpegurl")
-            func clean(_ value: String) -> String { value.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "\n", with: "").replacingOccurrences(of: "\r", with: "") }
-            return "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"external\",NAME=\"\(clean(track.label)) \(index + 1)\",LANGUAGE=\"\(clean(track.language))\",AUTOSELECT=YES,DEFAULT=NO,URI=\"\(url.absoluteString)\""
-        }.joined(separator: "\n")
     }
 
     private nonisolated static func receiveHeaders(_ connection: NWConnection, accumulated: Data,
@@ -118,11 +98,6 @@ actor MediaRelay {
             let path = String(fields[1]).split(separator: "?").first.map(String.init) ?? ""
             guard path.hasPrefix("/") else { throw StreamError.invalidResponse }
             let key = String(path.dropFirst())
-            if let (body, type) = generated[key] {
-                var payload = Data("HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
-                if fields[0] != "HEAD" { payload.append(body) }
-                connection.send(content: payload, completion: .contentProcessed { _ in connection.cancel() }); return
-            }
             guard let remote = routes[key], let referer else { throw StreamError.invalidResponse }
             let range = text.components(separatedBy: "\r\n").first { $0.lowercased().hasPrefix("range:") }?
                 .split(separator: ":", maxSplits: 1).last?.trimmingCharacters(in: .whitespaces)
@@ -132,19 +107,7 @@ actor MediaRelay {
             var contentType = response.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
             var contentRange = response.value(forHTTPHeaderField: "Content-Range")
             if let playlist = String(data: bytes, encoding: .utf8), playlist.hasPrefix("#EXTM3U") {
-                var rewritten = try Self.rewritePlaylist(playlist, base: response.url ?? remote, route: route)
-                if remote == root, !subtitles.isEmpty, !playlist.contains("TYPE=SUBTITLES") {
-                    let groups = try captionGroups()
-                    if playlist.contains("#EXT-X-STREAM-INF:") {
-                        rewritten = rewritten.components(separatedBy: .newlines).map { line in
-                            line.hasPrefix("#EXT-X-STREAM-INF:") && !line.contains("SUBTITLES=") ? line + ",SUBTITLES=\"external\"" : line
-                        }.joined(separator: "\n")
-                        rewritten = rewritten.replacingOccurrences(of: "#EXTM3U", with: "#EXTM3U\n" + groups)
-                    } else {
-                        let media = try local(rewritten, type: "application/vnd.apple.mpegurl")
-                        rewritten = "#EXTM3U\n#EXT-X-VERSION:3\n\(groups)\n#EXT-X-STREAM-INF:BANDWIDTH=8000000,SUBTITLES=\"external\"\n\(media.absoluteString)\n"
-                    }
-                }
+                let rewritten = try Self.rewritePlaylist(playlist, base: response.url ?? remote, route: route)
                 body = Data(rewritten.utf8)
                 contentType = "application/vnd.apple.mpegurl"
                 contentRange = nil

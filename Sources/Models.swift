@@ -42,6 +42,7 @@ struct SubtitleTrack: Codable, Hashable {
     let url: URL
     let language: String
     let label: String
+    var headers: [String: String] = [:]
 }
 
 enum StreamError: LocalizedError {

@@ -50,9 +50,13 @@ struct AniKotoAdapter: StreamAdapter {
                 ["User-Agent", "Referer", "Origin"].contains(key) && !value.contains("\r") && !value.contains("\n")
                     && (key == "User-Agent" || SafeURL.https(value) != nil)
             }
-            let subtitles = (row["subtitles"] as? [[String: String]] ?? []).compactMap { track -> SubtitleTrack? in
-                guard let url = SafeURL.https(track["url"] ?? "") else { return nil }
-                return SubtitleTrack(url: url, language: track["srclang"] ?? "und", label: track["label"] ?? "Subtitles")
+            let subtitles = (row["subtitles"] as? [[String: Any]] ?? []).compactMap { track -> SubtitleTrack? in
+                guard let url = SafeURL.https(track["url"] as? String ?? "") else { return nil }
+                let captionHeaders = (track["headers"] as? [String: String] ?? [:]).filter { key, value in
+                    ["User-Agent", "Referer", "Origin"].contains(key) && !value.contains("\r") && !value.contains("\n")
+                        && (key == "User-Agent" || SafeURL.https(value) != nil)
+                }
+                return SubtitleTrack(url: url, language: track["srclang"] as? String ?? "und", label: track["label"] as? String ?? "Subtitles", headers: captionHeaders)
             }
             let quality = row["quality"] as? String ?? ""
             let height = Int(quality.filter(\.isNumber)) ?? 0
