@@ -34,7 +34,8 @@ actor AnimeCatalog: AnimeCatalogProviding {
             guard !name.isEmpty else { return nil }
             let image = try card.select("img.film-poster-img").first()
             let lazy = try image?.absUrl("data-src") ?? ""
-            let poster = SafeURL.https(lazy) ?? SafeURL.https(try image?.absUrl("src") ?? "")
+            let immediate = try image?.absUrl("src") ?? ""
+            let poster = SafeURL.https(lazy) ?? SafeURL.https(immediate)
             return AnimeTitle(slug: url.lastPathComponent, name: name, poster: poster)
         }
     }

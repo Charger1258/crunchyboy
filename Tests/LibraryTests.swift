@@ -2,7 +2,7 @@ import XCTest
 @testable import StreamAnime
 
 final class LibraryTests: XCTestCase {
-    @MainActor func testProfileIsolationPersistenceAndNextEpisode() throws {
+    @MainActor func testProfileIsolationPersistenceAndNextEpisode() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
         let file = folder.appendingPathComponent("library.json")
