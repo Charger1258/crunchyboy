@@ -74,7 +74,6 @@ struct PlaybackScreen: View {
                     }.foregroundStyle(.white).padding(24).frame(maxWidth: 460).background(.black.opacity(0.95), in: RoundedRectangle(cornerRadius: 12))
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height)
-                .accessibilityIdentifier("landscape-player")
         }.ignoresSafeArea().background(.black).preferredColorScheme(.dark).statusBarHidden()
             .onAppear {
                 try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
