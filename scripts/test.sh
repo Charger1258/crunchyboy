@@ -9,6 +9,6 @@ RESULT="$PWD/build/Tests-$(date +%s).xcresult"
 xcodebuild test -project StreamAnime.xcodeproj -scheme StreamAnime \
   -configuration Release \
   -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
-  -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO
+  -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES
 mkdir -p build/artifacts/screenshots
 xcrun xcresulttool export attachments --path "$RESULT" --output-path "$PWD/build/artifacts/screenshots"

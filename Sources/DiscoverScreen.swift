@@ -76,7 +76,7 @@ import SwiftUI
             .refreshable { await load(); await refreshWatching() }
             .onChange(of: library.active.id) { _, _ in Task { await refreshWatching() } }
     }
-    private func load() async {
+    @MainActor private func load() async {
         guard !loading else { return }
         loading = true
         for section in sections {
