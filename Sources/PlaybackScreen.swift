@@ -32,6 +32,7 @@ struct PlaybackScreen: View {
             ZStack {
                 Color.black
                 PlayerSurface(player: session.player).allowsHitTesting(false)
+                if session.status != nil { Color.black.allowsHitTesting(false) }
                 Rectangle().fill(.clear).contentShape(Rectangle())
                     .gesture(SpatialTapGesture(count: 2).onEnded { event in
                         session.skip(event.location.x < geometry.size.width / 2 ? -10 : 10); showControls()
@@ -62,7 +63,6 @@ struct PlaybackScreen: View {
                         .transition(.opacity)
                 }
                 if let status = session.status {
-                    Color.black.allowsHitTesting(false)
                     VStack(spacing: 12) { ProgressView().tint(.white); Text(status).font(.caption).foregroundStyle(.white.opacity(0.8)) }
                         .padding(20).background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 10)).allowsHitTesting(false)
                 }
