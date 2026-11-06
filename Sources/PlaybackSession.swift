@@ -68,6 +68,7 @@ struct PlaybackRequest: Identifiable {
     }
 
     func start() {
+        diagnostic("start")
         shuttingDown = false
         task?.cancel(); startupTimeout?.cancel(); player.pause()
         observation = nil
@@ -114,11 +115,13 @@ struct PlaybackRequest: Identifiable {
             sourceLabel = source.source
             guard token == generation, !Task.isCancelled else { return }
             let item = AVPlayerItem(url: local)
+            diagnostic("item created; file=\(local.isFileURL)")
             applyQuality(item)
             player.replaceCurrentItem(with: item)
             observation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
                 Task { @MainActor [weak self] in
                     guard let self, token == self.generation, self.player.currentItem === item else { return }
+                    self.diagnostic("item status=\(item.status.rawValue); error=\(String(describing: item.error))")
                     if item.status == .readyToPlay {
                         self.configureCaptions(item, token: token)
                         let duration = item.duration.seconds
@@ -126,6 +129,7 @@ struct PlaybackRequest: Identifiable {
                         self.player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
                             Task { @MainActor [weak self] in
                                 guard let self, finished, token == self.generation, !self.shuttingDown else { return }
+                                self.diagnostic("initial seek finished")
                                 self.player.play(); self.status = nil
                             }
                         }
@@ -145,6 +149,15 @@ struct PlaybackRequest: Identifiable {
             }
             startupTimeout?.cancel()
             startupTimeout = Task { [weak self] in
+                #if targetEnvironment(simulator)
+                if self?.request.fixtureURL != nil {
+                    for _ in 0..<5 {
+                        try? await Task.sleep(for: .seconds(2))
+                        guard let self, !Task.isCancelled else { return }
+                        self.diagnostic("heartbeat status=\(item.status.rawValue); player=\(self.player.status.rawValue); timeControl=\(self.player.timeControlStatus.rawValue); waiting=\(String(describing: self.player.reasonForWaitingToPlay)); time=\(self.player.currentTime().seconds); error=\(String(describing: item.error))")
+                    }
+                }
+                #endif
                 try? await Task.sleep(for: .seconds(25))
                 guard let self, !Task.isCancelled, token == self.generation,
                       !self.sourceConfirmed,
@@ -317,12 +330,19 @@ struct PlaybackRequest: Identifiable {
     }
 
     func close() {
+        diagnostic("close")
         save(); shuttingDown = true; generation = UUID()
         task?.cancel(); startupTimeout?.cancel(); captionTask?.cancel(); player.pause(); player.replaceCurrentItem(with: nil)
         observation = nil
         if let timeObserver { player.removeTimeObserver(timeObserver); self.timeObserver = nil }
         if let endedObserver { NotificationCenter.default.removeObserver(endedObserver); self.endedObserver = nil }
         Task { await relay.stop() }
+    }
+
+    private func diagnostic(_ message: String) {
+        #if targetEnvironment(simulator)
+        if request.fixtureURL != nil { NSLog("PLAYER_FIXTURE %@", message) }
+        #endif
     }
 }
 
