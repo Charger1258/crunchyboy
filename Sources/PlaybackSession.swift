@@ -218,14 +218,18 @@ struct PlaybackRequest: Identifiable {
     }
 
     private func configureCaptions(_ item: AVPlayerItem, token: UUID) {
+        let source = candidates[candidateIndex]
+        let external = source.subtitles.enumerated().map { index, track in
+            CaptionOption(id: "external-" + String(index), label: track.label, language: track.language, external: track)
+        }
+        captionOptions = external
+        let language = UserDefaults.standard.string(forKey: "subtitleLanguage") ?? "en"
+        if let preferred = CaptionLanguage.preferred(external, language: language) { selectCaption(preferred.id, remember: false) }
         Task {
             let group = try? await item.asset.loadMediaSelectionGroup(for: .legible)
             guard token == generation, player.currentItem === item else { return }
             captionGroup = group
-            let source = candidates[candidateIndex]
-            var options = source.subtitles.enumerated().map { index, track in
-                CaptionOption(id: "external-" + String(index), label: track.label, language: track.language, external: track)
-            }
+            var options = external
             if let group {
                 options += group.options.enumerated().map { index, option in
                     CaptionOption(id: "native-" + String(index), label: option.displayName,
@@ -233,6 +237,12 @@ struct PlaybackRequest: Identifiable {
                 }
             }
             captionOptions = options
+            // Discovering embedded tracks must not delay external subtitles, or
+            // override a language the viewer selected while discovery was running.
+            guard selectedCaption == "off" else {
+                if let group { item.select(nil, in: group) }
+                return
+            }
             let language = UserDefaults.standard.string(forKey: "subtitleLanguage") ?? "en"
             if let preferred = CaptionLanguage.preferred(options, language: language) { selectCaption(preferred.id, remember: false) }
             else {

@@ -16,5 +16,6 @@ export_attachments() {
 trap export_attachments EXIT
 xcodebuild test -project StreamAnime.xcodeproj -scheme StreamAnime \
   -configuration Release \
+  -parallel-testing-enabled NO \
   -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
   -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES
