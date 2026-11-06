@@ -1,7 +1,8 @@
 #if targetEnvironment(simulator)
 import Foundation
 
-/// Deterministic media-only UI harness; never maps or substitutes any catalog entry.
+/// Deterministic, silent visual UI harness; cloud Macs may lack a working audio device.
+/// Never maps or substitutes any catalog entry. Audio requires a physical-device check.
 enum PlayerFixture {
     static var request: PlaybackRequest {
         let title = AnimeTitle(slug: "local-player-test", name: "Player test pattern", poster: nil)

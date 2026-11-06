@@ -17,6 +17,7 @@ final class PlayerTests: XCTestCase {
         }
         reveal()
         if app.buttons["Pause"].exists { app.buttons["Pause"].tap() }
+        app.sliders["Episode timeline"].adjust(toNormalizedSliderPosition: 0)
         XCTAssertEqual(caption.label, "English subtitles are visible.")
         capture("player-01-landscape-English")
         app.buttons["Forward 10 seconds"].tap()

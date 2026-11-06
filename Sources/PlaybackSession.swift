@@ -156,19 +156,10 @@ struct PlaybackRequest: Identifiable {
             }
             startupTimeout?.cancel()
             startupTimeout = Task { [weak self] in
-                #if targetEnvironment(simulator)
-                if self?.request.fixtureURL != nil {
-                    for _ in 0..<5 {
-                        try? await Task.sleep(for: .seconds(2))
-                        guard let self, !Task.isCancelled else { return }
-                        self.diagnostic("heartbeat status=\(item.status.rawValue); player=\(self.player.status.rawValue); timeControl=\(self.player.timeControlStatus.rawValue); waiting=\(String(describing: self.player.reasonForWaitingToPlay)); time=\(self.player.currentTime().seconds); error=\(String(describing: item.error))")
-                    }
-                }
-                #endif
                 try? await Task.sleep(for: .seconds(25))
                 guard let self, !Task.isCancelled, token == self.generation,
                       !self.sourceConfirmed,
-                      self.player.currentTime().seconds <= self.resumePosition + 0.1 else { return }
+                      self.position <= self.resumePosition + 0.1 else { return }
                 self.retryCandidate(token)
             }
         } catch { if !Task.isCancelled { retryCandidate(token) } }
