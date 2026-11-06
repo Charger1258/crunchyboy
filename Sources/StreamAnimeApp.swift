@@ -135,11 +135,13 @@ struct ShowScreen: View {
                         CoverImage(url: title.poster).frame(width: 110, height: 165).clipShape(RoundedRectangle(cornerRadius: 12))
                         VStack(alignment: .leading, spacing: 12) {
                             Text(title.name).font(.title2.bold())
-                            if let detail { Text("\(detail.seasons.count) seasons · \(detail.episodes.count) episodes").font(.caption).foregroundStyle(.secondary) }
+                            if let detail { Text("\(detail.seasons.filter { $0 > 0 }.count) seasons · \(detail.episodes.count) episodes").font(.caption).foregroundStyle(.secondary) }
                             if let current = library.continuing.first(where: { $0.title.id == title.id }) {
                                 Button(current.caughtUp ? "Watch again" : current.position > 0 ? "Resume episode" : "Play next episode") {
                                     launch(current.episode)
                                 }.buttonStyle(.borderedProminent)
+                            } else if let first = detail?.episodes.first(where: { $0.season > 0 }) ?? detail?.episodes.first {
+                                Button("Start watching") { launch(first) }.buttonStyle(.borderedProminent)
                             }
                         }
                     }
@@ -151,6 +153,7 @@ struct ShowScreen: View {
                                 ForEach(detail.seasons, id: \.self) { number in
                                     Button(number == 0 ? "Specials" : "Season \(number)") { season = number }
                                         .buttonStyle(.bordered).tint(season == number ? .orange : .gray)
+                                        .accessibilityValue(season == number ? "Selected" : "")
                                 }
                             }
                         }
@@ -195,7 +198,7 @@ struct ShowScreen: View {
             let loaded = try await catalog.details(title)
             try Task.checkCancellation(); library.remember(loaded)
             detail = ShowDetail(title: title, episodes: library.episodes(for: title))
-            season = library.continuing.first(where: { $0.title.id == title.id })?.episode.season ?? loaded.seasons.first ?? 1
+            season = library.continuing.first(where: { $0.title.id == title.id })?.episode.season ?? loaded.seasons.first(where: { $0 > 0 }) ?? loaded.seasons.first ?? 1
         } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         loading = false
     }

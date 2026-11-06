@@ -20,6 +20,7 @@ final class NavigationTests: XCTestCase {
         if featured.exists {
             featured.tap()
             _ = app.buttons.matching(identifier: "episodeRow").firstMatch.waitForExistence(timeout: 40)
+            if app.buttons["Season 1"].exists { XCTAssertEqual(app.buttons["Season 1"].value as? String, "Selected") }
             capture("03-episodes")
             app.navigationBars.buttons.element(boundBy: 0).tap()
         }

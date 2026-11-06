@@ -119,7 +119,7 @@ actor AnimeCatalog: AnimeCatalogProviding {
         return try page.select("a.ep-item[data-number][data-id][href]").array().compactMap { row in
             let id = try row.attr("data-id")
             guard id.allSatisfy(\.isNumber), !id.isEmpty,
-                  let number = Double(try row.attr("data-number")), number > 0,
+                  let number = Double(try row.attr("data-number")), number.isFinite, number > 0,
                   let url = SafeURL.https(try row.absUrl("href"), host: root.host),
                   url.path == "/watch/\(release)",
                   URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "ep" })?.value == id

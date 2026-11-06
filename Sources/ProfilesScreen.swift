@@ -31,7 +31,7 @@ struct ProfilesScreen: View {
                             else { error = "Enter a unique name, up to 32 characters." }
                         }.buttonStyle(.borderedProminent).controlSize(.large)
                     } else {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 24) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: min(3, library.profiles.count)), spacing: 24) {
                             ForEach(library.profiles) { profile in
                                 Button { library.select(profile); dismiss() } label: {
                                     VStack(spacing: 12) {

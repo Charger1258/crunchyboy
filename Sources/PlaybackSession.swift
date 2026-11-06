@@ -111,7 +111,7 @@ struct PlaybackRequest: Identifiable {
             startupTimeout = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(25))
                 guard let self, !Task.isCancelled, token == self.generation,
-                      self.status != nil,
+                      !self.sourceConfirmed,
                       self.player.currentTime().seconds <= self.resumePosition + 0.1 else { return }
                 self.retryCandidate(token)
             }
