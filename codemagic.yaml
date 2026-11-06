@@ -15,6 +15,8 @@ workflows:
         script: bash scripts/test.sh
       - name: Build unsigned device IPA
         script: bash scripts/build-ipa.sh
+      - name: Capture simulator preview
+        script: bash scripts/preview.sh
     artifacts:
       - build/artifacts/*.ipa
       - build/artifacts/*.sha256

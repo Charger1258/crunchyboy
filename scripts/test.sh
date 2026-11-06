@@ -9,7 +9,3 @@ RESULT="$PWD/build/Tests-$(date +%s).xcresult"
 xcodebuild test -project StreamAnime.xcodeproj -scheme StreamAnime \
   -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
   -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO
-mkdir -p build/artifacts
-xcrun simctl launch "$DEVICE_ID" com.streamanime.iphone
-sleep 3
-xcrun simctl io "$DEVICE_ID" screenshot "$PWD/build/artifacts/iphone-preview.png"
