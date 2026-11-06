@@ -126,6 +126,7 @@ struct PlaybackRequest: Identifiable {
                     if item.status == .readyToPlay {
                         self.configureCaptions(item, token: token)
                         let duration = item.duration.seconds
+                        self.duration = duration.isFinite ? max(0, duration) : 0
                         let position = duration.isFinite ? min(self.resumePosition, max(0, duration - 1)) : self.resumePosition
                         if position <= 0 {
                             self.player.play(); self.status = nil
@@ -167,7 +168,7 @@ struct PlaybackRequest: Identifiable {
 
     private func retryCandidate(_ token: UUID) {
         guard token == generation, !shuttingDown else { return }
-        let current = player.currentTime().seconds
+        let current = position
         if current.isFinite, current > resumePosition { resumePosition = current; save() }
         generation = UUID(); let nextToken = generation
         observation = nil; startupTimeout?.cancel(); player.pause()
@@ -313,7 +314,7 @@ struct PlaybackRequest: Identifiable {
     }
     func seek(to seconds: Double) {
         guard seconds.isFinite else { return }
-        let total = player.currentItem?.duration.seconds ?? 0
+        let total = duration
         let target = max(0, min(seconds, total.isFinite && total > 0 ? total : seconds))
         position = target
         captionText = SubtitleDocument.visible(cues, at: target - subtitleOffset)
@@ -321,7 +322,7 @@ struct PlaybackRequest: Identifiable {
     }
 
     func skip(_ seconds: Double) {
-        let time = player.currentTime().seconds
+        let time = position
         guard time.isFinite else { return }
         seek(to: time + seconds)
     }
@@ -331,9 +332,8 @@ struct PlaybackRequest: Identifiable {
         if request.fixtureURL != nil { return }
         #endif
         guard request.directURL == nil else { return }
-        let duration = player.currentItem?.duration.seconds ?? 0
         library.record(profile: profile, title: request.title, episode: episode,
-                       position: player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0,
+                       position: position,
                        duration: duration.isFinite ? duration : 0, completed: completed)
     }
 
