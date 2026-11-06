@@ -95,7 +95,8 @@ struct ContinueItem: Identifiable {
                 let next = sequence[index + 1]
                 return ContinueItem(title: record.title, episode: next, position: resume(next), caughtUp: false)
             }
-            return ContinueItem(title: record.title, episode: record.episode,
+            let current = sequence.first { $0.id == record.episode.id } ?? record.episode
+            return ContinueItem(title: record.title, episode: current,
                                 position: record.completed ? 0 : record.position, caughtUp: record.completed)
         }
     }

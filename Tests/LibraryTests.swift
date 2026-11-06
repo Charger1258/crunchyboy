@@ -15,6 +15,11 @@ final class LibraryTests: XCTestCase {
         store.record(profile: original.id, title: show, episode: first, position: 150, duration: 1200, completed: false)
         XCTAssertEqual(store.continuing.first?.episode.id, first.id)
         XCTAssertEqual(store.resume(first), 150)
+        var enriched = first
+        enriched.image = URL(string: "https://images.example.org/episode.jpg")!
+        store.remember(ShowDetail(title: show, episodes: [enriched]))
+        XCTAssertEqual(store.continuing.first?.episode.image, enriched.image)
+        XCTAssertEqual(store.continuing.first?.position, 150)
         store.record(profile: original.id, title: show, episode: first, position: 1200, duration: 1200, completed: true)
         XCTAssertEqual(store.continuing.first?.episode.id, second.id)
         store.record(profile: original.id, title: show, episode: second, position: 1200, duration: 1200, completed: true)
