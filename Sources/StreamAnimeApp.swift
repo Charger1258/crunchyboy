@@ -12,27 +12,61 @@ import SwiftUI
 struct RootScreen: View {
     @EnvironmentObject private var library: LibraryStore
     @State private var catalog = AnimeCatalog()
-    @State private var profiles = true
+    @State private var profiles = false
+    @State private var profileChosen = false
+    @State private var selectedTab = 0
     @State private var playback: PlaybackRequest?
 
     var body: some View {
-        TabView {
+        Group {
+            if profileChosen { mainTabs }
+            else { ProfilesScreen(onComplete: { profileChosen = true }) }
+        }
+    }
+
+    private var mainTabs: some View {
+        TabView(selection: $selectedTab) {
             NavigationStack {
                 DiscoverScreen(catalog: catalog, play: { playback = $0 })
                     .navigationDestination(for: AnimeTitle.self) { title in ShowScreen(title: title, catalog: catalog, play: { playback = $0 }) }
                     .toolbar { profileButton }
-            }.tabItem { Label("Home", systemImage: "house.fill") }
+            }.tag(0).tabItem { Label("Home", systemImage: "house.fill") }
             NavigationStack {
-                SearchScreen(catalog: catalog)
+                BrowseScreen(catalog: catalog)
                     .navigationDestination(for: AnimeTitle.self) { title in ShowScreen(title: title, catalog: catalog, play: { playback = $0 }) }
-                    .toolbar { profileButton }
-            }.tabItem { Label("Search", systemImage: "magnifyingglass") }
+            }.tag(1).tabItem { Label("Browse", systemImage: "square.grid.2x2") }
+            NavigationStack {
+                WatchLibraryScreen(play: { playback = $0 }, browse: { selectedTab = 1 })
+                    .navigationDestination(for: AnimeTitle.self) { title in ShowScreen(title: title, catalog: catalog, play: { playback = $0 }) }
+            }.tag(2).tabItem { Label("My Library", systemImage: "bookmark") }
             NavigationStack {
                 SettingsScreen(showProfiles: { profiles = true }, play: { playback = $0 })
-            }.tabItem { Label("Settings", systemImage: "gearshape.fill") }
+            }.tag(3).tabItem { Label("Account", systemImage: "person.crop.circle") }
         }
+        .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) { mobileTabBar }
         .fullScreenCover(isPresented: $profiles) { ProfilesScreen() }
         .fullScreenCover(item: $playback) { request in PlaybackScreen(request: request, library: library) }
+    }
+
+    private var mobileTabBar: some View {
+        HStack(spacing: 0) {
+            tab("Home", icon: "house.fill", index: 0)
+            tab("Browse", icon: "square.grid.2x2", index: 1)
+            tab("My Library", icon: "bookmark", index: 2)
+            tab("Account", icon: "person.crop.circle", index: 3)
+        }.padding(.top, 8).padding(.bottom, 4).background(AnimeTheme.background)
+            .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.12)).frame(height: 0.5) }
+    }
+    private func tab(_ label: String, icon: String, index: Int) -> some View {
+        Button { selectedTab = index } label: {
+            VStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 21, weight: .semibold))
+                Text(label).font(.system(size: 10, weight: .semibold))
+            }.frame(maxWidth: .infinity, minHeight: 46)
+                .foregroundStyle(selectedTab == index ? AnimeTheme.accent : .gray)
+        }.accessibilityIdentifier("tab-" + String(index))
+            .accessibilityAddTraits(selectedTab == index ? .isSelected : [])
     }
 
     @ToolbarContentBuilder private var profileButton: some ToolbarContent {
@@ -47,10 +81,16 @@ struct RootScreen: View {
 
 struct CoverImage: View {
     let url: URL?
+    @State private var artwork: UIImage?
     var body: some View {
-        AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: {
-            Rectangle().fill(.white.opacity(0.06)).overlay { Image(systemName: "play.square").foregroundStyle(.secondary) }
-        }.clipped()
+        ZStack {
+            Rectangle().fill(AnimeTheme.surface)
+            if let artwork { Image(uiImage: artwork).resizable().scaledToFill() }
+            else { Image(systemName: "play.square").foregroundStyle(.secondary) }
+        }.clipped().task(id: url) {
+            artwork = nil
+            if let url { let loaded = await ArtworkLoader.shared.image(url); if !Task.isCancelled { artwork = loaded } }
+        }
     }
 }
 
@@ -58,8 +98,8 @@ struct PosterTile: View {
     let title: AnimeTitle
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            CoverImage(url: title.poster).aspectRatio(2 / 3, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 12))
-            Text(title.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
+            CoverImage(url: title.poster).aspectRatio(2 / 3, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 4))
+            Text(title.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(.primary).lineLimit(2)
                 .frame(maxWidth: .infinity, minHeight: 38, alignment: .topLeading)
         }.contentShape(Rectangle())
     }
@@ -83,38 +123,6 @@ struct ContinueCard: View {
             Text(item.episode.label + (item.position > 0 ? " · Resume \(Int(item.position / 60)):\(String(format: "%02d", Int(item.position) % 60))" : ""))
                 .font(.caption).foregroundStyle(.secondary)
         }.frame(width: 260, alignment: .leading)
-    }
-}
-
-struct SearchScreen: View {
-    let catalog: AnimeCatalog
-    @State private var query = ""
-    @State private var results: [AnimeTitle] = []
-    @State private var loading = false
-    @State private var error: String?
-    var body: some View {
-        ScrollView {
-            if query.trimmingCharacters(in: .whitespacesAndNewlines).count < 2 {
-                ContentUnavailableView("What are you looking for?", systemImage: "magnifyingglass", description: Text("Search for an anime title."))
-            } else if loading { ProgressView("Searching…").padding(40) }
-            else if let error { ContentUnavailableView("Search unavailable", systemImage: "wifi.exclamationmark", description: Text(error)) }
-            else if results.isEmpty { ContentUnavailableView.search(text: query) }
-            else {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 20) {
-                    ForEach(results) { title in NavigationLink(value: title) { PosterTile(title: title) }.buttonStyle(.plain) }
-                }.padding(20)
-            }
-        }.navigationTitle("Search").searchable(text: $query, prompt: "Anime title")
-            .task(id: query) {
-                let submitted = query.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard submitted.count >= 2 else { results = []; return }
-                loading = true; error = nil
-                do {
-                    try await Task.sleep(for: .milliseconds(450))
-                    let matches = try await catalog.search(submitted)
-                    try Task.checkCancellation(); results = matches; loading = false
-                } catch { if !Task.isCancelled { self.error = error.localizedDescription; loading = false } }
-            }
     }
 }
 
@@ -160,20 +168,22 @@ struct ShowScreen: View {
                         ForEach(detail.episodes.filter { $0.season == season }) { episode in
                             Button { launch(episode) } label: {
                                 HStack(spacing: 14) {
-                                    Text(episode.number.formatted(.number.precision(.fractionLength(0...1))))
-                                        .font(.caption.bold()).foregroundStyle(AnimeTheme.accent).frame(width: 22)
-                                    CoverImage(url: episode.image ?? title.poster).frame(width: 108, height: 64)
+                                    CoverImage(url: episode.image ?? title.poster).frame(width: 120, height: 68)
+                                        .overlay(alignment: .topLeading) {
+                                            Text("E" + episode.number.formatted(.number.precision(.fractionLength(0...1))))
+                                                .font(.system(size: 10, weight: .bold)).padding(4).background(.black.opacity(0.8)).padding(4)
+                                        }
                                         .overlay(alignment: .bottom) { if library.progress(episode) > 0 { ProgressView(value: library.progress(episode)).tint(AnimeTheme.accent) } }
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                     VStack(alignment: .leading, spacing: 5) {
-                                        Text(episode.name).font(.body.weight(.medium)).foregroundStyle(.primary)
+                                        Text(episode.name).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).lineLimit(2)
                                         if library.resume(episode) > 0 { Text("Resume \(Int(library.resume(episode) / 60)) min").font(.caption).foregroundStyle(.secondary) }
                                         if library.watched(episode) { Label("Watched", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary) }
                                     }
                                     Spacer(minLength: 0)
                                     Image(systemName: "play.fill").foregroundStyle(AnimeTheme.accent)
-                                }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(AnimeTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                                }.padding(.vertical, 10).frame(maxWidth: .infinity, alignment: .leading)
+                                    .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.08)).frame(height: 0.5) }
                             }.buttonStyle(.plain).id(episode.id).accessibilityIdentifier("episodeRow")
                         }
                     }

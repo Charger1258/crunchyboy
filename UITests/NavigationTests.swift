@@ -13,7 +13,7 @@ final class NavigationTests: XCTestCase {
         capture("01-profiles")
         let profile = app.buttons.matching(identifier: "profileChoice").firstMatch
         XCTAssertTrue(profile.waitForExistence(timeout: 5)); profile.tap()
-        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["tab-0"].waitForExistence(timeout: 10))
         let featured = app.buttons["featuredShow"]
         _ = featured.waitForExistence(timeout: 20)
         capture("02-home")
@@ -24,11 +24,22 @@ final class NavigationTests: XCTestCase {
             capture("03-episodes")
             app.navigationBars.buttons.element(boundBy: 0).tap()
         }
-        app.tabBars.buttons["Search"].tap()
+        app.buttons["tab-1"].tap()
         XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
-        capture("04-search")
-        app.tabBars.buttons["Settings"].tap()
+        capture("04-browse")
+        app.buttons["tab-2"].tap()
+        XCTAssertTrue(app.staticTexts["Your watch history"].waitForExistence(timeout: 5))
+        capture("05-library")
+        app.buttons["tab-3"].tap()
         XCTAssertTrue(app.staticTexts["Subtitle language"].waitForExistence(timeout: 5))
-        capture("05-settings")
+        capture("06-account")
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Who’s watching?"].waitForExistence(timeout: 10))
+        let unexpectedExit = expectation(for: NSPredicate { _, _ in app.state != .runningForeground }, evaluatedWith: nil)
+        unexpectedExit.isInverted = true
+        wait(for: [unexpectedExit], timeout: 5)
+        XCTAssertFalse(app.buttons["tab-0"].exists, "Home must not be mounted behind the startup picker")
+        capture("07-release-relaunch")
     }
 }

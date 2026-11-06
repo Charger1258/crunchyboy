@@ -3,6 +3,20 @@
 Native SwiftUI app, installed through SideStore. Catalog requests, source resolution,
 playback and history run on the iPhone. No hosted streaming backend is required.
 
+## Mobile update (0.3)
+
+- The profile picker is the initial root screen. Home and catalog requests are not
+  mounted until a profile is chosen; subsequent profile changes remain modal.
+- Startup shelf loading uses one main-actor sequence instead of a child task group.
+  This removes the background task-group path implicated by the physical-device
+  SIGABRT report. Device confirmation is still required; simulator success does not
+  establish the exact cause of an iOS 27 runtime abort.
+- CI tests the optimized Release configuration, including launch, navigation and relaunch.
+- Mobile navigation: Home, Browse (search/categories), My Library and Account, with
+  a flat bottom bar that reserves its own safe area. Episode rows use bounded titles,
+  thumbnail episode badges and large touch targets.
+- Artwork is downsampled to at most 1000 pixels and cached with a 32 MB cost limit.
+
 ## Current preview (0.2)
 
 - Charcoal/orange TV theme, featured title, horizontal Popular, Recently Updated,

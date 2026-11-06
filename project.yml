@@ -8,8 +8,8 @@ settings:
     SWIFT_VERSION: '5.0'
     IPHONEOS_DEPLOYMENT_TARGET: '17.0'
     CODE_SIGNING_ALLOWED: 'NO'
-    MARKETING_VERSION: 0.2.0
-    CURRENT_PROJECT_VERSION: 2
+    MARKETING_VERSION: 0.3.0
+    CURRENT_PROJECT_VERSION: 3
 packages:
   SwiftSoup:
     url: https://github.com/scinfu/SwiftSoup.git

@@ -7,6 +7,7 @@ test -n "$DEVICE_ID" || { echo 'No available iPhone simulator runtime. Install a
 mkdir -p build
 RESULT="$PWD/build/Tests-$(date +%s).xcresult"
 xcodebuild test -project StreamAnime.xcodeproj -scheme StreamAnime \
+  -configuration Release \
   -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
   -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO
 mkdir -p build/artifacts/screenshots
