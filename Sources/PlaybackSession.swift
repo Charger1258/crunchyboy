@@ -118,10 +118,11 @@ struct PlaybackRequest: Identifiable {
             diagnostic("item created; file=\(local.isFileURL)")
             applyQuality(item)
             player.replaceCurrentItem(with: item)
+            diagnostic("item installed")
             observation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
                 Task { @MainActor [weak self] in
                     guard let self, token == self.generation, self.player.currentItem === item else { return }
-                    self.diagnostic("item status=\(item.status.rawValue); error=\(String(describing: item.error))")
+                    self.diagnostic("item status=\(item.status.rawValue)")
                     if item.status == .readyToPlay {
                         self.configureCaptions(item, token: token)
                         let duration = item.duration.seconds
@@ -136,9 +137,11 @@ struct PlaybackRequest: Identifiable {
                     } else if item.status == .failed { self.retryCandidate(token) }
                 }
             }
+            diagnostic("observation installed")
             // Signal playback intent while the item prepares; the ready handler applies
             // resume seeking before the loading cover is removed.
             player.play()
+            diagnostic("play requested")
             if let endedObserver { NotificationCenter.default.removeObserver(endedObserver) }
             endedObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in
@@ -351,7 +354,14 @@ struct PlaybackRequest: Identifiable {
 
     private func diagnostic(_ message: String) {
         #if targetEnvironment(simulator)
-        if request.fixtureURL != nil { NSLog("PLAYER_FIXTURE %@", message) }
+        if request.fixtureURL != nil {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("player-diagnostics.log")
+            let data = Data(("\(Date().timeIntervalSince1970) \(message)\n").utf8)
+            if let handle = try? FileHandle(forWritingTo: url) {
+                defer { try? handle.close() }
+                _ = try? handle.seekToEnd(); try? handle.write(contentsOf: data)
+            } else { try? data.write(to: url) }
+        }
         #endif
     }
 }
