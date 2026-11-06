@@ -66,7 +66,7 @@ struct HiAnimeStreamAdapter: StreamAdapter {
             } catch is CancellationError { throw CancellationError() }
             catch {
                 let reason = (error as? URLError).map { Self.networkReason($0) } ?? error.localizedDescription
-                failures.append("Couldn’t load the \(stage). \(reason)")
+                failures.append("Couldn't load the \(stage). \(reason)")
             }
         }
         if streams.isEmpty, let failure = failures.last { throw StreamError.unavailable(failure) }
@@ -76,7 +76,7 @@ struct HiAnimeStreamAdapter: StreamAdapter {
     static func networkReason(_ error: URLError) -> String {
         switch error.code {
         case .timedOut: return "The video source timed out. Try again later."
-        case .cannotFindHost, .dnsLookupFailed: return "The video source’s address could not be found."
+        case .cannotFindHost, .dnsLookupFailed: return "The video source's address could not be found."
         case .cannotConnectToHost: return "The video source could not be reached."
         case .notConnectedToInternet: return "Check your internet connection."
         default: return error.localizedDescription
