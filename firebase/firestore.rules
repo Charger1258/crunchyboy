@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function text(value, maximum) { return value is string && value.size() <= maximum; }
+    function versioned(data) {
+      return data.schemaVersion == 1 && data.revision is int && data.revision > 0
+        && data.updatedAt == request.time;
+    }
+    function profile(data) {
+      return data.keys().hasAll(['schemaVersion', 'name', 'avatarKey', 'avatarImage', 'deleted', 'revision', 'updatedAt'])
+        && data.keys().hasOnly(['schemaVersion', 'name', 'avatarKey', 'avatarImage', 'deleted', 'revision', 'updatedAt'])
+        && versioned(data) && text(data.name, 32) && data.name.size() > 0
+        && text(data.avatarKey, 64) && text(data.avatarImage, 65536) && data.deleted is bool;
+    }
+    function progress(data) {
+      return data.keys().hasAll(['schemaVersion', 'provider', 'episodeId', 'releaseId', 'seriesId',
+          'season', 'episodeNumber', 'title', 'episodeTitle', 'posterUrl', 'positionMs', 'durationMs',
+          'completed', 'watchedAtMs', 'revision', 'sessionId', 'deviceId', 'deleted', 'updatedAt'])
+        && data.keys().hasOnly(['schemaVersion', 'provider', 'episodeId', 'releaseId', 'seriesId',
+          'season', 'episodeNumber', 'title', 'episodeTitle', 'posterUrl', 'positionMs', 'durationMs',
+          'completed', 'watchedAtMs', 'revision', 'sessionId', 'deviceId', 'deleted', 'updatedAt'])
+        && versioned(data) && text(data.provider, 32) && data.provider.size() > 0
+        && text(data.episodeId, 256) && data.episodeId.size() > 0
+        && text(data.releaseId, 256) && text(data.seriesId, 256)
+        && data.season is int && data.season >= 0 && data.season <= 10000
+        && data.episodeNumber is number && data.episodeNumber >= 0 && data.episodeNumber <= 1000000
+        && text(data.title, 512) && text(data.episodeTitle, 512) && text(data.posterUrl, 2048)
+        && data.positionMs is int && data.positionMs >= 0 && data.positionMs <= 604800000
+        && data.durationMs is int && data.durationMs >= 0 && data.durationMs <= 604800000
+        && (data.durationMs == 0 || data.positionMs <= data.durationMs)
+        && data.completed is bool && data.deleted is bool
+        && data.watchedAtMs is int && data.watchedAtMs >= 0
+        && data.watchedAtMs <= request.time.toMillis() + 300000
+        && text(data.sessionId, 128) && data.sessionId.size() > 0
+        && text(data.deviceId, 128) && data.deviceId.size() > 0;
+    }
+    match /users/{uid}/profiles/{profileId} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && profile(request.resource.data)
+        && request.resource.data.revision == 1;
+      allow update: if owner(uid) && profile(request.resource.data)
+        && request.resource.data.revision == resource.data.revision + 1;
+      // Tombstones preserve deletions when an offline device reconnects.
+      allow delete: if false;
+      match /progress/{episodeKey} {
+        function activeProfile() {
+          return get(/databases/$(database)/documents/users/$(uid)/profiles/$(profileId)).data.deleted == false;
+        }
+        allow read: if owner(uid);
+        allow create: if owner(uid) && activeProfile() && progress(request.resource.data)
+          && request.resource.data.revision == 1;
+        allow update: if owner(uid) && activeProfile() && progress(request.resource.data)
+          && request.resource.data.revision == resource.data.revision + 1
+          && request.resource.data.provider == resource.data.provider
+          && request.resource.data.episodeId == resource.data.episodeId;
+        allow delete: if false;
+      }
+    }
+    // Everything outside the explicit account paths is denied.
+    match /{document=**} { allow read, write: if false; }
+  }
+}
