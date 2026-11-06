@@ -98,10 +98,14 @@ The SwiftSoup parser dependency is pinned to 2.7.7. IPA packaging refuses simula
 
 1. Install, launch, and choose a profile. Check Home and Search.
 2. Open an anime, pick an episode, and confirm picture **and sound** on the actual iPhone.
-3. Rotate the phone and seek both directions. Confirm the full picture remains visible.
-4. Inspect the player's captions menu. Embedded subtitles should appear when supplied.
+3. Confirm the player opens in landscape, keeps the full picture visible, and returns to
+   portrait when closed. Scrub the timeline and try both 10-second skip controls.
+4. Open Subtitles, select English, and confirm dialogue appears. Try another language,
+   Off, text size and timing adjustments. External WebVTT/SRT tracks render in the app;
+   embedded tracks use the native media selection. Track availability depends on the source.
 5. Close playback, reopen the Continue Watching card, and confirm resume position.
-6. Finish an episode or use Next Episode; verify next-up and caught-up behavior.
+6. Finish an episode or use Next Episode; verify next-up and caught-up behavior, and
+   that the selected subtitle language carries over when the next source supplies it.
 7. Switch profiles and verify the other profile's history is separate.
 8. If source playback fails, use Settings → Playback test with a known-working HTTPS HLS URL.
    Report the on-screen error, iPhone model and iOS version. Do not post signed stream URLs.
