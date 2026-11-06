@@ -25,7 +25,7 @@ struct RootScreen: View {
             #if targetEnvironment(simulator)
             if ProcessInfo.processInfo.arguments.contains("--player-ui-test"), !fixtureClosed {
                 Color.black.onAppear { fixturePresentation = true }
-                    .fullScreenCover(isPresented: $fixturePresentation, onDismiss: { fixtureClosed = true }) {
+                    .fullScreenCover(isPresented: $fixturePresentation, onDismiss: { OrientationPolicy.restorePortrait(); fixtureClosed = true }) {
                         LandscapePlayback(request: PlayerFixture.request, library: library, close: { fixturePresentation = false }).ignoresSafeArea()
                     }
             } else if profileChosen { mainTabs }
@@ -59,7 +59,7 @@ struct RootScreen: View {
         .toolbar(.hidden, for: .tabBar)
         .safeAreaInset(edge: .bottom, spacing: 0) { mobileTabBar }
         .fullScreenCover(isPresented: $profiles) { ProfilesScreen() }
-        .fullScreenCover(item: $playback) { request in LandscapePlayback(request: request, library: library, close: { playback = nil }).ignoresSafeArea() }
+        .fullScreenCover(item: $playback, onDismiss: { OrientationPolicy.restorePortrait() }) { request in LandscapePlayback(request: request, library: library, close: { playback = nil }).ignoresSafeArea() }
     }
 
     private var mobileTabBar: some View {

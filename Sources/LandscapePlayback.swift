@@ -3,6 +3,13 @@ import UIKit
 
 @MainActor enum OrientationPolicy {
     static var mask: UIInterfaceOrientationMask = .portrait
+    static func restorePortrait() {
+        mask = .portrait
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) where scene.activationState == .foregroundActive {
+            scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+        }
+    }
 }
 
 @MainActor final class PlayerAppDelegate: NSObject, UIApplicationDelegate {
