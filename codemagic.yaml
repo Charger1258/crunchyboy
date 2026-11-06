@@ -18,4 +18,5 @@ workflows:
     artifacts:
       - build/artifacts/*.ipa
       - build/artifacts/*.sha256
+      - build/artifacts/*.png
       - build/*.xcresult
