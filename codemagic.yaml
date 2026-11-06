@@ -1,0 +1,21 @@
+workflows:
+  ios-sidestore-preview:
+    name: Stream Anime · SideStore preview
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      xcode: latest
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
+      - name: Check IPA packager
+        script: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Run iPhone simulator tests
+        script: bash scripts/test.sh
+      - name: Build unsigned device IPA
+        script: bash scripts/build-ipa.sh
+    artifacts:
+      - build/artifacts/*.ipa
+      - build/artifacts/*.sha256
+      - build/*.xcresult
