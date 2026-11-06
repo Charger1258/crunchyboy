@@ -15,6 +15,11 @@ struct PlaybackRequest: Identifiable {
     @Published private(set) var episode: Episode
     @Published private(set) var status: String? = "Opening episode…"
     @Published private(set) var error: String?
+    @Published private(set) var sourceLabel = ""
+    private var captionGroup: AVMediaSelectionGroup?
+    private var captionsReady = false
+    private var lastCaptionSelection: String?
+    private var sourceConfirmed = false
     private let request: PlaybackRequest
     private let library: LibraryStore
     private let profile: UUID
@@ -53,6 +58,7 @@ struct PlaybackRequest: Identifiable {
         if let endedObserver { NotificationCenter.default.removeObserver(endedObserver); self.endedObserver = nil }
         generation = UUID(); let token = generation
         status = "Opening episode…"; error = nil; completed = false
+        captionGroup = nil; captionsReady = false; sourceConfirmed = false
         resumePosition = library.resume(episode, profile: profile); lastSave = 0
         task = Task {
             do {
@@ -72,6 +78,8 @@ struct PlaybackRequest: Identifiable {
         guard !shuttingDown, token == generation, candidateIndex < candidates.count else { return }
         do {
             let local = try await relay.start(candidates[candidateIndex])
+            let source = candidates[candidateIndex]
+            sourceLabel = source.source + (source.height > 0 ? " · \(source.height)p" : "")
             guard token == generation, !Task.isCancelled else { return }
             let item = AVPlayerItem(url: local)
             player.replaceCurrentItem(with: item)
@@ -79,6 +87,7 @@ struct PlaybackRequest: Identifiable {
                 Task { @MainActor [weak self] in
                     guard let self, token == self.generation, self.player.currentItem === item else { return }
                     if item.status == .readyToPlay {
+                        self.configureCaptions(item, token: token)
                         let duration = item.duration.seconds
                         let position = duration.isFinite ? min(self.resumePosition, max(0, duration - 1)) : self.resumePosition
                         self.player.seek(to: CMTime(seconds: position, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
@@ -95,13 +104,14 @@ struct PlaybackRequest: Identifiable {
                 Task { @MainActor [weak self] in
                     guard let self, token == self.generation else { return }
                     self.completed = true; self.save()
+                    if UserDefaults.standard.bool(forKey: "autoNextEpisode"), self.nextEpisode != nil { self.playNext() }
                 }
             }
             startupTimeout?.cancel()
             startupTimeout = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(25))
                 guard let self, !Task.isCancelled, token == self.generation,
-                      self.player.timeControlStatus != .paused,
+                      self.status != nil,
                       self.player.currentTime().seconds <= self.resumePosition + 0.1 else { return }
                 self.retryCandidate(token)
             }
@@ -112,6 +122,11 @@ struct PlaybackRequest: Identifiable {
         guard token == generation, !shuttingDown else { return }
         generation = UUID(); let nextToken = generation
         observation = nil; startupTimeout?.cancel(); player.pause()
+        if candidateIndex < candidates.count {
+            let failed = candidates[candidateIndex]
+            Task { await SourceHealth.shared.failed(failed) }
+        }
+        captionsReady = false; captionGroup = nil; sourceConfirmed = false
         candidateIndex += 1
         guard candidateIndex < candidates.count else {
             status = nil; error = "The video couldn’t start on this device. Try again, or choose another episode."; return
@@ -128,7 +143,44 @@ struct PlaybackRequest: Identifiable {
 
     private func tick(_ position: Double) {
         guard position.isFinite, position > 0, !shuttingDown else { return }
+        if !sourceConfirmed, position > resumePosition + 1, candidateIndex < candidates.count {
+            sourceConfirmed = true
+            let source = candidates[candidateIndex]
+            Task { await SourceHealth.shared.succeeded(source) }
+        }
+        if captionsReady, let item = player.currentItem, let captionGroup {
+            let selected = item.currentMediaSelection.selectedMediaOption(in: captionGroup)
+            let language = selected.map { $0.extendedLanguageTag ?? $0.locale?.languageCode ?? "und" } ?? "off"
+            if language != lastCaptionSelection {
+                UserDefaults.standard.set(language, forKey: "subtitleLanguage")
+                lastCaptionSelection = language
+            }
+        }
         if position - lastSave >= 5 { save(); lastSave = position }
+    }
+
+    private func configureCaptions(_ item: AVPlayerItem, token: UUID) {
+        Task {
+            guard let group = try? await item.asset.loadMediaSelectionGroup(for: .legible), token == generation,
+                  player.currentItem === item else { return }
+            captionGroup = group
+            let language = UserDefaults.standard.string(forKey: "subtitleLanguage") ?? "en"
+            if language == "off" { item.select(nil, in: group) }
+            else if let option = group.options.first(where: {
+                ($0.extendedLanguageTag ?? $0.locale?.languageCode ?? "").lowercased().hasPrefix(language.lowercased().split(separator: "-").first.map(String.init) ?? language)
+            }) { item.select(option, in: group) }
+            // If the preferred language is absent, retain the preference for the next episode.
+            let selected = item.currentMediaSelection.selectedMediaOption(in: group)
+            lastCaptionSelection = selected.map { $0.extendedLanguageTag ?? $0.locale?.languageCode ?? "und" } ?? "off"
+            captionsReady = true
+        }
+    }
+
+    func skip(_ seconds: Double) {
+        let time = player.currentTime().seconds
+        guard time.isFinite else { return }
+        let duration = player.currentItem?.duration.seconds ?? .infinity
+        player.seek(to: CMTime(seconds: min(max(0, time + seconds), duration.isFinite ? duration : .infinity), preferredTimescale: 600))
     }
 
     private func save() {
@@ -172,6 +224,8 @@ struct PlaybackScreen: View {
                 Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.title2) }.accessibilityLabel("Close player")
                 Text(session.episode.number > 0 ? session.episode.label + " · " + session.episode.name : "Playback test").font(.subheadline).lineLimit(2)
                 Spacer()
+                Button { session.skip(-10) } label: { Image(systemName: "gobackward.10") }.accessibilityLabel("Back 10 seconds")
+                Button { session.skip(10) } label: { Image(systemName: "goforward.10") }.accessibilityLabel("Forward 10 seconds")
                 if session.nextEpisode != nil { Button("Next episode") { session.playNext() }.buttonStyle(.bordered) }
             }.padding().background(.ultraThinMaterial)
             ZStack {
@@ -187,6 +241,7 @@ struct PlaybackScreen: View {
                     } description: { Text(error) } actions: { Button("Try again") { session.start() }.buttonStyle(.borderedProminent) }
                 }
             }
+            if !session.sourceLabel.isEmpty { Text(session.sourceLabel).font(.caption).foregroundStyle(.secondary).padding(8) }
         }.background(.black).preferredColorScheme(.dark)
             .onAppear {
                 try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)

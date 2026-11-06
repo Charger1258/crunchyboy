@@ -50,7 +50,12 @@ struct ContinueItem: Identifiable {
     var profiles: [ViewerProfile] { state.profiles }
     var active: ViewerProfile { state.profiles.first { $0.id == state.active } ?? state.profiles[0] }
     var records: [WatchRecord] { state.history[active.id.uuidString] ?? [] }
-    func episodes(for title: AnimeTitle) -> [Episode] { state.episodes[title.id] ?? [] }
+    func episodes(for title: AnimeTitle) -> [Episode] { state.episodes[title.id] ?? state.episodes[title.slug] ?? [] }
+    func watched(_ episode: Episode) -> Bool { records.first { $0.episode.id == episode.id }?.completed ?? false }
+    func progress(_ episode: Episode) -> Double {
+        guard let row = records.first(where: { $0.episode.id == episode.id }), row.duration > 0 else { return 0 }
+        return min(1, max(0, row.position / row.duration))
+    }
 
     func select(_ profile: ViewerProfile) { state.active = profile.id; persist() }
     func add(name: String, symbol: String) -> Bool {

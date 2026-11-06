@@ -14,13 +14,21 @@ actor AnimeCatalog: AnimeCatalogProviding {
 
     func browse(path: String = "/most-popular") async throws -> [AnimeTitle] {
         let url = Self.root.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
-        return try Self.parseTitles(await http.text(url))
+        return Self.group(try Self.parseTitles(await http.text(url)))
     }
 
     func search(_ query: String) async throws -> [AnimeTitle] {
+        Self.group(try await searchReleases(query))
+    }
+    private func searchReleases(_ query: String) async throws -> [AnimeTitle] {
         var url = URLComponents(url: Self.root.appendingPathComponent("search"), resolvingAgainstBaseURL: false)!
         url.queryItems = [URLQueryItem(name: "keyword", value: query)]
         return try Self.parseTitles(await http.text(url.url!))
+    }
+
+    static func group(_ titles: [AnimeTitle]) -> [AnimeTitle] {
+        var seen = Set<String>()
+        return titles.filter { seen.insert($0.id).inserted }
     }
 
     static func parseTitles(_ html: String) throws -> [AnimeTitle] {
@@ -51,6 +59,22 @@ actor AnimeCatalog: AnimeCatalogProviding {
             releases.append((url.lastPathComponent, season))
         }
         if !releases.contains(where: { $0.0 == title.slug }) { releases.append((title.slug, 1)) }
+        let metadata = AnimeMetadata.shared
+        var identities: [String: Int] = [:]
+        if let id = await ReleaseIdentity.shared.resolve([try page.select("a.dynamic-name[data-jname]").attr("data-jname"), title.name]) { identities[title.slug] = id }
+        // Search broadly, then require the same structured TVDB series identity.
+        // Titles alone never establish a season relationship.
+        if let series = metadata.series(identities[title.slug]) {
+            let candidates = (try? await searchReleases(title.name)) ?? []
+            for candidate in candidates {
+                guard let id = await ReleaseIdentity.shared.resolve([candidate.name]), metadata.series(id) == series else { continue }
+                identities[candidate.slug] = id
+                if !releases.contains(where: { $0.0 == candidate.slug }) {
+                    let season = metadata.ranges(id).first?[1] as? Int ?? 1
+                    releases.append((candidate.slug, season))
+                }
+            }
+        }
         var episodes: [Episode] = []
         var failures = 0
         for (slug, season) in releases {
@@ -59,7 +83,16 @@ actor AnimeCatalog: AnimeCatalogProviding {
             do {
                 let address = Self.root.appendingPathComponent("api/theme/episode/list/\(id)")
                 let response = try await http.text(address)
-                episodes += try Self.parseEpisodes(response, release: slug, season: season)
+                var parsed = try Self.parseEpisodes(response, release: slug, season: season)
+                var identity = identities[slug]
+                if identity == nil, let html = try? await http.text(Self.root.appendingPathComponent("watch/\(slug)")),
+                   let releasePage = try? SwiftSoup.parse(html) {
+                    identity = await ReleaseIdentity.shared.resolve([try releasePage.select("a.dynamic-name[title]").attr("title"),
+                                                  try releasePage.select("a.dynamic-name[data-jname]").attr("data-jname")])
+                }
+                parsed = metadata.mapped(parsed, id: identity)
+                if let identity { parsed = await EpisodeArtwork.shared.enrich(parsed, anime: identity) }
+                episodes += parsed
             } catch is CancellationError { throw CancellationError() }
             catch { failures += 1 }
         }

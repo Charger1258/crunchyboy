@@ -1,26 +1,38 @@
-# Stream Anime for iPhone — first playback preview
+# Stream Anime for iPhone — TV parity preview
 
 Native SwiftUI app, installed through SideStore. Catalog requests, source resolution,
 playback and history run on the iPhone. No hosted streaming backend is required.
 
-## First version
+## Current preview (0.2)
 
-- Popular/recent anime and title search from the existing HiAnime provider.
-- Provider-linked seasons, episode selection, and an extendable stream-adapter interface.
-- The Android app's primary subtitled ZokoAnime resolver, ported to Swift.
-- AVPlayer with the original video aspect ratio, seeking, resume, and a next-episode action.
-- On-device loopback HLS relay for the provider's Referer/Origin requirements. The listener
-  binds to 127.0.0.1, lives only during playback, and forwards playlists, segments, keys,
-  byte ranges and subtitle renditions already carried in HLS. It does not host a public server.
-- Local profiles and separate watch history. Continue/Up Next launches playback; caught-up
-  titles open the show. Known episode lists survive incomplete provider responses.
-- A direct HTTPS stream test under Settings, to separate player failures from provider failures.
+- Charcoal/orange TV theme, featured title, horizontal Popular, Recently Updated,
+  Anime Series and Anime Films shelves, search, and full-screen profile selection.
+- The TV app's generated anime-offline-database title aliases and AniBridge TVDB ranges
+  bundled locally, with exact-title AniList fallback for unresolved identities.
+- Structured episode coordinates and generic multi-title offset checks keep display
+  numbering separate from the provider number used for playback. Unknown/ambiguous
+  mappings retain provider coordinates; individual shows are never hardcoded.
+- Related release discovery requires the same structured series identity. Episode
+  thumbnails/titles use identity-checked ani.zip metadata and fall back gracefully.
+- Primary ZokoAnime plus the TV app's two AniKoto HLS gateways resolve concurrently.
+  Verified manifest quality ranks candidates; sources that fail during playback receive
+  a persisted 30-minute cooldown. These are community sources, with no availability guarantee.
+- Native AVPlayer, full picture aspect ratio, seek controls, resume, next episode,
+  optional automatic next episode, and remembered subtitle language across episodes.
+- A loopback-only HLS relay preserves allowed provider playback headers. External
+  WebVTT/SRT caption files are exposed through HLS subtitle renditions; SRT timestamps
+  are converted to WebVTT. Native embedded subtitles remain intact.
+- Separate local profile histories, watched episode indicators, preview cards, and
+  darkened caught-up cards. Home refreshes the six most recent watching titles to
+  discover new episodes without changing history order.
+- CI tests cover model/parser/playback infrastructure and native navigation. UI test
+  screenshots are exported under build/artifacts/screenshots; catalog screenshots use
+  live data, never title-specific substitutions or test mappings.
 
-This is **not feature parity with Android yet**. Crunchyroll sign-in/import, imported profile
-pictures, AniBridge metadata grouping, episode stills, additional stream adapters, standalone
-subtitle-file integration, automatic catalog refresh, picture-in-picture, and TV/phone sync
-are follow-up work. Provider season labels are used in this preview; no individual show is
-hardcoded. Embedded HLS captions use the native player controls.
+Still outside this pass: Crunchyroll sign-in/import and imported avatars, TV/phone sync,
+AnimeGG MP4 fallback, picture-in-picture, and full offline/paginated library browsing.
+Live streams and external captions still require physical iPhone testing. Automated
+parser/navigation tests are not proof of working provider playback.
 
 ## Build with Codemagic
 
@@ -65,9 +77,9 @@ The SwiftSoup parser dependency is pinned to 2.7.7. IPA packaging refuses simula
 
 ## Verification status
 
-Windows-side validation can check Swift syntax, YAML/plist/assets, and the IPA packager.
-SwiftUI/AVFoundation compilation and simulator tests require the first Mac build. Playback
-and SideStore compatibility must then be verified on a physical iPhone; they are not assumed.
+Windows validation checks Swift syntax/UTF-8, YAML/plist/assets and IPA packaging.
+Codemagic compiles the native simulator and arm64 device targets, runs unit/UI tests,
+and exports screenshots. Physical-device playback is a separate required check.
 
 The test suite covers HTML identity checks, episode merging, resolver configuration decoding,
 playlist URI rewriting, loopback binding, profile isolation, persistence and next-up behavior.

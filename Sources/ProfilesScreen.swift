@@ -21,15 +21,13 @@ struct ProfilesScreen: View {
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 20) {
                             ForEach(ViewerProfile.symbols, id: \.self) { avatar in
                                 Button { symbol = avatar } label: {
-                                    Image(systemName: avatar).font(.system(size: 36)).frame(width: 76, height: 76)
-                                        .background(.orange.opacity(symbol == avatar ? 0.35 : 0.08), in: RoundedRectangle(cornerRadius: 22))
-                                        .overlay(RoundedRectangle(cornerRadius: 22).stroke(symbol == avatar ? .orange : .clear, lineWidth: 2))
+                                    ProfileAvatar(symbol: avatar, selected: symbol == avatar)
                                 }.accessibilityLabel(avatar.replacingOccurrences(of: ".fill", with: "") + " avatar")
                             }
                         }
                         if let error { Text(error).foregroundStyle(.red).font(.caption) }
                         Button("Create profile") {
-                            if library.add(name: name, symbol: symbol) { creating = false; name = ""; error = nil }
+                            if library.add(name: name, symbol: symbol) { library.select(library.profiles.last!); dismiss() }
                             else { error = "Enter a unique name, up to 32 characters." }
                         }.buttonStyle(.borderedProminent).controlSize(.large)
                     } else {
@@ -37,21 +35,19 @@ struct ProfilesScreen: View {
                             ForEach(library.profiles) { profile in
                                 Button { library.select(profile); dismiss() } label: {
                                     VStack(spacing: 12) {
-                                        Image(systemName: profile.symbol).font(.system(size: 36)).frame(width: 76, height: 76)
-                                            .background(.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 22))
-                                            .overlay(RoundedRectangle(cornerRadius: 22).stroke(library.active.id == profile.id ? .orange : .clear, lineWidth: 2))
+                                        ProfileAvatar(symbol: profile.symbol, selected: library.active.id == profile.id)
                                         Text(profile.name).font(.subheadline.bold()).foregroundStyle(.primary).lineLimit(2)
                                     }
-                                }.buttonStyle(.plain)
+                                }.buttonStyle(.plain).accessibilityIdentifier("profileChoice")
                             }
                         }
                         Button { creating = true } label: { Label("Add profile", systemImage: "plus.circle") }.buttonStyle(.bordered)
                     }
                 }.padding(24)
-            }.toolbar {
+            }.background(AnimeTheme.background).toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button(creating ? "Cancel" : "Done") { if creating { creating = false } else { dismiss() } } }
             }
-        }.tint(.orange).preferredColorScheme(.dark)
+        }.tint(AnimeTheme.accent).preferredColorScheme(.dark)
     }
 }
 
@@ -61,12 +57,28 @@ struct SettingsScreen: View {
     let play: (PlaybackRequest) -> Void
     @State private var streamURL = ""
     @State private var invalidURL = false
+    @AppStorage("subtitleLanguage") private var subtitleLanguage = "en"
+    @AppStorage("autoNextEpisode") private var autoNextEpisode = false
     var body: some View {
         Form {
             Section("Your profile") {
                 Button { showProfiles() } label: { Label(library.active.name, systemImage: library.active.symbol) }
                 Text("Watch history is saved separately for each profile on this iPhone.").font(.footnote).foregroundStyle(.secondary)
                 if let error = library.storageError { Text(error).foregroundStyle(.red) }
+            }
+            Section("Playback") {
+                Picker("Subtitle language", selection: $subtitleLanguage) {
+                    Text("English").tag("en"); Text("Arabic").tag("ar"); Text("Spanish").tag("es")
+                    Text("French").tag("fr"); Text("German").tag("de"); Text("Portuguese").tag("pt"); Text("Off").tag("off")
+                    if !["en", "ar", "es", "fr", "de", "pt", "off"].contains(subtitleLanguage) { Text(subtitleLanguage.uppercased()).tag(subtitleLanguage) }
+                }
+                Toggle("Play next episode automatically", isOn: $autoNextEpisode)
+                Text("The player remembers caption changes across episodes. Streams are ranked by quality, with recently failed sources tried later.").font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("Stream sources") {
+                Label("ZokoAnime", systemImage: "play.rectangle")
+                Label("AniKoto · two gateway routes", systemImage: "arrow.triangle.branch")
+                Text("Only subtitled streams with matching episode identities are accepted. Availability depends on each source.").font(.footnote).foregroundStyle(.secondary)
             }
             Section("Playback test") {
                 Text("Have a direct HTTPS HLS stream? Open it here to check playback separately from the catalog.")
@@ -81,11 +93,11 @@ struct SettingsScreen: View {
                 }.disabled(streamURL.isEmpty)
             }
             Section("About") {
-                LabeledContent("Version", value: "0.1 · iPhone preview")
-                Text("This first version focuses on catalog browsing, native playback, profiles, and saved progress.")
+                LabeledContent("Version", value: "0.2 · TV parity preview")
+                Text("Structured seasons, episode previews, separate profiles, and native playback. Crunchyroll import and cross-device sync are not available yet.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-        }.navigationTitle("Settings")
+        }.scrollContentBackground(.hidden).background(AnimeTheme.background).navigationTitle("Settings")
             .alert("Use an HTTPS address", isPresented: $invalidURL) {
                 Button("OK", role: .cancel) {}
             } message: { Text("Enter the full HTTPS stream URL.") }

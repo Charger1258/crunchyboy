@@ -8,8 +8,8 @@ settings:
     SWIFT_VERSION: '5.0'
     IPHONEOS_DEPLOYMENT_TARGET: '17.0'
     CODE_SIGNING_ALLOWED: 'NO'
-    MARKETING_VERSION: 0.1.0
-    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.2.0
+    CURRENT_PROJECT_VERSION: 2
 packages:
   SwiftSoup:
     url: https://github.com/scinfu/SwiftSoup.git
@@ -38,10 +38,21 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.streamanime.iphone.tests
         GENERATE_INFOPLIST_FILE: YES
+  StreamAnimeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: StreamAnime
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.streamanime.iphone.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: StreamAnime
 schemes:
   StreamAnime:
     build:
       targets:
         StreamAnime: all
     test:
-      targets: [StreamAnimeTests]
+      targets: [StreamAnimeTests, StreamAnimeUITests]

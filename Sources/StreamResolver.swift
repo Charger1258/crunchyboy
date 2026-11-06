@@ -1,28 +1,38 @@
 import Foundation
 import SwiftSoup
 
-protocol StreamAdapter {
+protocol StreamAdapter: Sendable {
     var name: String { get }
     func resolve(_ episode: Episode) async throws -> [ResolvedStream]
 }
 
 /// Adapters remain separate so additional providers can be ported without changing the player.
 actor StreamResolver {
-    private let adapters: [any StreamAdapter] = [HiAnimeStreamAdapter()]
+    private let adapters: [any StreamAdapter] = [HiAnimeStreamAdapter(),
+        AniKotoAdapter(gateway: URL(string: "https://watch.reyamika.eu.cc")!),
+        AniKotoAdapter(gateway: URL(string: "https://lvrcdn2.rewcrew.lv")!)]
 
     func resolve(_ episode: Episode) async throws -> [ResolvedStream] {
         var candidates: [ResolvedStream] = []
         var failures: [String] = []
-        for adapter in adapters {
-            try Task.checkCancellation()
-            do { candidates += try await adapter.resolve(episode) }
-            catch is CancellationError { throw CancellationError() }
-            catch { failures.append("\(adapter.name): \(error.localizedDescription)") }
+        await withTaskGroup(of: ([ResolvedStream], String?).self) { group in
+            for adapter in adapters {
+                group.addTask {
+                    do { return (try await adapter.resolve(episode), nil) }
+                    catch { return ([], "\(adapter.name): \(error.localizedDescription)") }
+                }
+            }
+            for await (streams, failure) in group {
+                candidates += streams
+                if let failure { failures.append(failure) }
+            }
         }
+        try Task.checkCancellation()
         guard !candidates.isEmpty else {
             throw failures.isEmpty ? StreamError.noStream : StreamError.unavailable(failures.joined(separator: "\n"))
         }
-        return candidates.sorted { $0.height > $1.height }
+        var seen = Set<URL>()
+        return await SourceHealth.shared.ranked(candidates.filter { seen.insert($0.url).inserted })
     }
 }
 
@@ -62,7 +72,11 @@ struct HiAnimeStreamAdapter: StreamAdapter {
                 let ns = playlist as NSString
                 let height = regex.matches(in: playlist, range: NSRange(location: 0, length: ns.length))
                     .compactMap { Int(ns.substring(with: $0.range(at: 1))) }.max() ?? 0
-                streams.append(ResolvedStream(url: media, referer: referer, height: height, source: name))
+                let subtitles = (config.subtitles ?? []).compactMap { track -> SubtitleTrack? in
+                    guard let url = SafeURL.https(track.src) else { return nil }
+                    return SubtitleTrack(url: url, language: track.lang ?? "und", label: track.label ?? "Subtitles")
+                }
+                streams.append(ResolvedStream(url: media, referer: referer, height: height, source: name, subtitles: subtitles))
             } catch is CancellationError { throw CancellationError() }
             catch {
                 let reason = (error as? URLError).map { Self.networkReason($0) } ?? error.localizedDescription
@@ -83,7 +97,11 @@ struct HiAnimeStreamAdapter: StreamAdapter {
         }
     }
 
-    struct PlayerConfig: Decodable { let src: String }
+    struct PlayerConfig: Decodable {
+        let src: String
+        var subtitles: [Track]? = nil
+        struct Track: Decodable { let src: String; let lang: String?; let label: String? }
+    }
 
     static func decodePlayer(_ html: String) throws -> PlayerConfig {
         let regex = try NSRegularExpression(pattern: #"window\.__P\s*=\s*"([^"]+)""#)

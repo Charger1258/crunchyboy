@@ -4,7 +4,7 @@ import SwiftUI
     @StateObject private var library = LibraryStore()
     var body: some Scene {
         WindowGroup {
-            RootScreen().environmentObject(library).tint(.orange).preferredColorScheme(.dark)
+            RootScreen().environmentObject(library).tint(AnimeTheme.accent).preferredColorScheme(.dark)
         }
     }
 }
@@ -18,7 +18,7 @@ struct RootScreen: View {
     var body: some View {
         TabView {
             NavigationStack {
-                HomeScreen(catalog: catalog, play: { playback = $0 })
+                DiscoverScreen(catalog: catalog, play: { playback = $0 })
                     .navigationDestination(for: AnimeTitle.self) { title in ShowScreen(title: title, catalog: catalog, play: { playback = $0 }) }
                     .toolbar { profileButton }
             }.tabItem { Label("Home", systemImage: "house.fill") }
@@ -31,7 +31,7 @@ struct RootScreen: View {
                 SettingsScreen(showProfiles: { profiles = true }, play: { playback = $0 })
             }.tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
-        .sheet(isPresented: $profiles) { ProfilesScreen() }
+        .fullScreenCover(isPresented: $profiles) { ProfilesScreen() }
         .fullScreenCover(item: $playback) { request in PlaybackScreen(request: request, library: library) }
     }
 
@@ -65,78 +65,20 @@ struct PosterTile: View {
     }
 }
 
-struct HomeScreen: View {
-    @EnvironmentObject private var library: LibraryStore
-    let catalog: AnimeCatalog
-    let play: (PlaybackRequest) -> Void
-    @State private var filter = 0
-    @State private var titles: [AnimeTitle] = []
-    @State private var loading = false
-    @State private var error: String?
-    @State private var loadID = UUID()
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Good to see you, \(library.active.name)").font(.subheadline).foregroundStyle(.secondary)
-                    Text("Find your next obsession.").font(.largeTitle.bold())
-                }.padding(.top, 8)
-                if !library.continuing.isEmpty { continueSection }
-                Picker("Browse", selection: $filter) { Text("Popular now").tag(0); Text("Recently updated").tag(1) }.pickerStyle(.segmented)
-                if loading && titles.isEmpty { ProgressView("Finding anime…").frame(maxWidth: .infinity).padding(40) }
-                if let error {
-                    ContentUnavailableView {
-                        Label("Couldn’t load anime", systemImage: "wifi.exclamationmark")
-                    } description: { Text(error) } actions: { Button("Try again") { Task { await load() } }.buttonStyle(.borderedProminent) }
-                }
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 20) {
-                    ForEach(titles) { title in NavigationLink(value: title) { PosterTile(title: title) }.buttonStyle(.plain) }
-                }
-            }.padding(.horizontal, 20).padding(.bottom, 24)
-        }.background(Color(red: 0.035, green: 0.035, blue: 0.045))
-            .navigationTitle("Stream Anime").navigationBarTitleDisplayMode(.inline)
-            .task(id: filter) { titles = []; await load() }.refreshable { await load() }
-    }
-
-    private var continueSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Continue watching").font(.title2.bold())
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(alignment: .top, spacing: 14) {
-                    ForEach(library.continuing) { item in
-                        if item.caughtUp {
-                            NavigationLink(value: item.title) { ContinueCard(item: item) }.buttonStyle(.plain)
-                        } else {
-                            Button {
-                                play(PlaybackRequest(title: item.title, episode: item.episode, episodes: library.episodes(for: item.title)))
-                            } label: { ContinueCard(item: item) }.buttonStyle(.plain)
-                        }
-                    }
-                }.padding(.vertical, 2)
-            }.contentMargins(.trailing, 20)
-        }
-    }
-
-    private func load() async {
-        let token = UUID(); loadID = token
-        loading = true; error = nil
-        do { let result = try await catalog.browse(path: filter == 0 ? "/most-popular" : "/recently-updated"); try Task.checkCancellation(); if token == loadID { titles = result } }
-        catch { if !Task.isCancelled, token == loadID { self.error = error.localizedDescription } }
-        if token == loadID { loading = false }
-    }
-}
-
 struct ContinueCard: View {
+    @EnvironmentObject private var library: LibraryStore
     let item: ContinueItem
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            CoverImage(url: item.title.poster).frame(width: 260, height: 146)
+            CoverImage(url: item.episode.image ?? item.title.poster).frame(width: 260, height: 146)
                 .saturation(item.caughtUp ? 0.35 : 1).brightness(item.caughtUp ? -0.35 : 0)
                 .overlay(alignment: .topLeading) {
                     Text(item.caughtUp ? "ALL CAUGHT UP" : item.position > 0 ? "CONTINUE" : "UP NEXT")
                         .font(.caption2.bold()).padding(7).background(.black.opacity(0.8), in: Capsule()).padding(8)
                 }.clipShape(RoundedRectangle(cornerRadius: 12))
+            if !item.caughtUp, library.progress(item.episode) > 0 {
+                ProgressView(value: library.progress(item.episode)).tint(AnimeTheme.accent)
+            }
             Text(item.title.name).font(.subheadline.bold()).foregroundStyle(item.caughtUp ? .secondary : .primary).lineLimit(2)
             Text(item.episode.label + (item.position > 0 ? " · Resume \(Int(item.position / 60)):\(String(format: "%02d", Int(item.position) % 60))" : ""))
                 .font(.caption).foregroundStyle(.secondary)
@@ -216,20 +158,27 @@ struct ShowScreen: View {
                             Button { launch(episode) } label: {
                                 HStack(spacing: 14) {
                                     Text(episode.number.formatted(.number.precision(.fractionLength(0...1))))
-                                        .font(.title3.bold()).foregroundStyle(.orange).frame(width: 36)
+                                        .font(.caption.bold()).foregroundStyle(AnimeTheme.accent).frame(width: 22)
+                                    CoverImage(url: episode.image ?? title.poster).frame(width: 108, height: 64)
+                                        .overlay(alignment: .bottom) { if library.progress(episode) > 0 { ProgressView(value: library.progress(episode)).tint(AnimeTheme.accent) } }
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(episode.name).font(.body.weight(.medium)).foregroundStyle(.primary)
                                         if library.resume(episode) > 0 { Text("Resume \(Int(library.resume(episode) / 60)) min").font(.caption).foregroundStyle(.secondary) }
+                                        if library.watched(episode) { Label("Watched", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.secondary) }
                                     }
                                     Spacer(minLength: 0)
-                                    Image(systemName: "play.fill").foregroundStyle(.orange)
+                                    Image(systemName: "play.fill").foregroundStyle(AnimeTheme.accent)
                                 }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                            }.buttonStyle(.plain).id(episode.id)
+                                    .background(AnimeTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                            }.buttonStyle(.plain).id(episode.id).accessibilityIdentifier("episodeRow")
                         }
                     }
                 }.padding(20)
-            }.task { await load() }
+            }.background(AnimeTheme.background).task {
+                await load()
+                if let current = library.continuing.first(where: { $0.title.id == title.id }) { proxy.scrollTo(current.episode.id, anchor: .center) }
+            }
                 .onChange(of: season) { _, _ in
                     if let current = library.continuing.first(where: { $0.title.id == title.id }), current.episode.season == season {
                         withAnimation { proxy.scrollTo(current.episode.id, anchor: .center) }

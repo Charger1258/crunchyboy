@@ -1,7 +1,10 @@
 import Foundation
 
 struct AnimeTitle: Identifiable, Codable, Hashable {
-    var id: String { slug }
+    var id: String {
+        if let series = AnimeMetadata.shared.series(AnimeMetadata.shared.identity([name])) { return "tvdb:\(series)" }
+        return slug
+    }
     let slug: String
     let name: String
     let poster: URL?
@@ -13,6 +16,8 @@ struct Episode: Identifiable, Codable, Hashable {
     let season: Int
     let number: Double
     let name: String
+    var localNumber: Double? = nil
+    var image: URL? = nil
     var label: String { "S\(season) · E\(number.formatted(.number.precision(.fractionLength(0...1))))" }
 }
 
@@ -28,6 +33,15 @@ struct ResolvedStream: Identifiable {
     let referer: URL
     let height: Int
     let source: String
+    var headers: [String: String] = [:]
+    var subtitles: [SubtitleTrack] = []
+    var reliabilityKey: String { source + "|" + (url.host ?? "") }
+}
+
+struct SubtitleTrack: Codable, Hashable {
+    let url: URL
+    let language: String
+    let label: String
 }
 
 enum StreamError: LocalizedError {
