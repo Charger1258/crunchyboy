@@ -62,6 +62,7 @@ struct PlaybackScreen: View {
                         .transition(.opacity)
                 }
                 if let status = session.status {
+                    Color.black.allowsHitTesting(false)
                     VStack(spacing: 12) { ProgressView().tint(.white); Text(status).font(.caption).foregroundStyle(.white.opacity(0.8)) }
                         .padding(20).background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 10)).allowsHitTesting(false)
                 }

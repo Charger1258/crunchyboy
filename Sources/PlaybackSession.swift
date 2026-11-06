@@ -132,6 +132,9 @@ struct PlaybackRequest: Identifiable {
                     } else if item.status == .failed { self.retryCandidate(token) }
                 }
             }
+            // Signal playback intent while the item prepares; the ready handler applies
+            // resume seeking before the loading cover is removed.
+            player.play()
             if let endedObserver { NotificationCenter.default.removeObserver(endedObserver) }
             endedObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in
