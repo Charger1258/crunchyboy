@@ -14,10 +14,24 @@ export_attachments() {
   fi
 }
 trap export_attachments EXIT
-# Firebase plus two simultaneous simulator architectures can exhaust the M2 builder.
-# Test the selected simulator architecture and bound concurrent compiler jobs.
-xcodebuild test -jobs 2 -project StreamAnime.xcodeproj -scheme StreamAnime \
-  -configuration Release \
-  -parallel-testing-enabled NO \
-  -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
-  -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES
+# Bound compiler concurrency and test only the selected simulator architecture.
+run_tests() {
+  xcodebuild test -jobs 2 -project StreamAnime.xcodeproj -scheme StreamAnime \
+    -configuration Release \
+    -parallel-testing-enabled NO \
+    -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
+    -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES
+}
+LOG="$PWD/build/simulator-tests.log"
+if run_tests 2>&1 | tee "$LOG"; then
+  exit 0
+fi
+# Xcode explicitly requests another build after its build-service aborts. Preserve the
+# failed result and reuse this machine's compiled dependencies; never retry test failures.
+if grep -Fq 'The Xcode build system has crashed' "$LOG"; then
+  echo 'Retrying once after the Xcode build-service crash, using the compiled cache.'
+  RESULT="$PWD/build/Tests-$(date +%s)-retry.xcresult"
+  run_tests 2>&1 | tee "$PWD/build/simulator-tests-retry.log"
+else
+  exit 1
+fi
