@@ -7,3 +7,5 @@ __pycache__/
 *.p12
 *.mobileprovision
 *.xcuserstate
+.firebase/
+firebase-debug.log

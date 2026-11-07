@@ -67,6 +67,11 @@ parser/navigation tests are not proof of working provider playback.
 
 ## Build with Codemagic
 
+For phone updates, open https://crunchyboy-1be9d-updates.web.app on the iPhone and add
+the SideStore source once. Published releases then appear in SideStore. The public
+app-download repository is separate from this private source repository. See
+[release instructions](docs/RELEASING.md) for publishing each approved build.
+
 This folder is the entire `Charger1258/crunchyboy` repository. No Android build outputs,
 personal watch history, cookies, passwords, signing keys, or private import snapshots belong here.
 

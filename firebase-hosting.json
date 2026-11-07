@@ -1,0 +1,11 @@
+{
+  "hosting": {
+    "site": "crunchyboy-1be9d-updates",
+    "public": "build/sidestore-site",
+    "ignore": ["hosting.json", "**/.*", "**/node_modules/**"],
+    "headers": [
+      {"source": "/source.json", "headers": [{"key": "Cache-Control", "value": "no-store"}, {"key": "Access-Control-Allow-Origin", "value": "*"}, {"key": "Content-Type", "value": "application/json; charset=utf-8"}]},
+      {"source": "/", "headers": [{"key": "Cache-Control", "value": "no-cache"}]}
+    ]
+  }
+}

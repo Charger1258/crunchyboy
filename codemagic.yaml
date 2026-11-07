@@ -31,9 +31,14 @@ workflows:
         script: bash scripts/build-ipa.sh
       - name: Capture simulator preview
         script: bash scripts/preview.sh
+      - name: Prepare SideStore update bundle
+        script: |
+          python3 scripts/sidestore_source.py build/artifacts/StreamAnime-unsigned.ipa build/sidestore-site --notes "Latest tested Stream Anime release."
+          ditto -c -k --keepParent build/sidestore-site build/artifacts/SideStore-release.zip
     artifacts:
       - build/artifacts/*.ipa
       - build/artifacts/*.sha256
       - build/artifacts/*.png
+      - build/artifacts/SideStore-release.zip
       - build/artifacts/screenshots/**
       - build/*.xcresult
