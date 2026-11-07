@@ -14,8 +14,10 @@ export_attachments() {
   fi
 }
 trap export_attachments EXIT
-xcodebuild test -project StreamAnime.xcodeproj -scheme StreamAnime \
+# Firebase plus two simultaneous simulator architectures can exhaust the M2 builder.
+# Test the selected simulator architecture and bound concurrent compiler jobs.
+xcodebuild test -jobs 2 -project StreamAnime.xcodeproj -scheme StreamAnime \
   -configuration Release \
   -parallel-testing-enabled NO \
   -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
-  -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES
+  -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES
