@@ -7,7 +7,10 @@ test -n "$DEVICE_ID" || { echo 'No available iPhone simulator runtime. Install a
 mkdir -p build
 RESULT="$PWD/build/Tests-$(date +%s).xcresult"
 export_attachments() {
-  mkdir -p build/artifacts/screenshots
+  mkdir -p build/artifacts/screenshots/build-service
+  if [ -d "$HOME/Library/Logs/DiagnosticReports" ]; then
+    find "$HOME/Library/Logs/DiagnosticReports" -type f -name '*BuildService*' -exec cp {} build/artifacts/screenshots/build-service/ \; || true
+  fi
   find "$HOME/Library/Developer/CoreSimulator/Devices" -name player-diagnostics.log -exec cat {} \; > build/artifacts/screenshots/player-diagnostics.txt 2>&1 || true
   if [ -d "$RESULT" ]; then
     xcrun xcresulttool export attachments --path "$RESULT" --output-path "$PWD/build/artifacts/screenshots" || true
