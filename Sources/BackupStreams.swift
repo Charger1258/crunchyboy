@@ -28,7 +28,8 @@ struct AniKotoAdapter: StreamAdapter {
                         let height = regex.matches(in: playlist, range: NSRange(location: 0, length: text.length))
                             .compactMap { Int(text.substring(with: $0.range(at: 1))) }.max() ?? stream.height
                         return ResolvedStream(url: stream.url, referer: stream.referer, height: height,
-                                              source: stream.source, headers: stream.headers, subtitles: stream.subtitles)
+                                              source: stream.source, headers: stream.headers, subtitles: stream.subtitles,
+                                              skipMarkers: stream.skipMarkers)
                     } catch { await SourceHealth.shared.failed(stream); return nil }
                 }
             }
@@ -60,9 +61,12 @@ struct AniKotoAdapter: StreamAdapter {
             }
             let quality = row["quality"] as? String ?? ""
             let height = Int(quality.filter(\.isNumber)) ?? 0
+            let markers = ["intro": row["intro"], "outro": row["outro"]].compactMapValues { $0 }
+            let skip = (try? JSONDecoder().decode(PlaybackSkipMarkers.self, from: JSONSerialization.data(withJSONObject: markers)))
+                ?? PlaybackSkipMarkers()
             return ResolvedStream(url: url, referer: SafeURL.https(headers["Referer"] ?? "") ?? gateway,
                                   height: height, source: "AniKoto / " + (row["server"] as? String ?? "HLS"),
-                                  headers: headers, subtitles: subtitles)
+                                  headers: headers, subtitles: subtitles, skipMarkers: skip)
         }
     }
 }

@@ -35,7 +35,38 @@ struct ResolvedStream: Identifiable {
     let source: String
     var headers: [String: String] = [:]
     var subtitles: [SubtitleTrack] = []
+    var skipMarkers = PlaybackSkipMarkers()
     var reliabilityKey: String { source + "|" + (url.host ?? "") }
+}
+
+struct PlaybackSkipMarkers: Decodable {
+    struct Segment: Decodable {
+        let start: Double
+        let end: Double
+
+        func target(at position: Double, duration: Double) -> Double? {
+            guard start.isFinite, end.isFinite, start >= 0, end > start,
+                  duration.isFinite, duration > 0, end <= duration + 1 else { return nil }
+            let target = min(end, duration)
+            return position >= start && position < target ? target : nil
+        }
+    }
+
+    let intro: Segment?
+    let outro: Segment?
+
+    init(intro: Segment? = nil, outro: Segment? = nil) {
+        self.intro = intro
+        self.outro = outro
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        intro = try? container.decode(Segment.self, forKey: .intro)
+        outro = try? container.decode(Segment.self, forKey: .outro)
+    }
+
+    private enum CodingKeys: String, CodingKey { case intro, outro }
 }
 
 struct SubtitleTrack: Codable, Hashable {

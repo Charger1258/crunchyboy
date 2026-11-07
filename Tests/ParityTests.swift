@@ -21,11 +21,13 @@ final class ParityTests: XCTestCase {
     }
     func testGatewayRejectsWrongEpisodeAndUnsafeHeaders() throws {
         let root = URL(string: "https://gateway.example")!
-        let payload = #"{"anilistId":42,"episode":3,"audio":"sub","streams":[{"type":"hls","url":"https://media.example/master.m3u8","headers":{"Referer":"https://source.example/","Cookie":"private","Origin":"http://unsafe.example"},"subtitles":[{"url":"https://media.example/en.vtt","srclang":"en","label":"English"}]}]}"#
+        let payload = #"{"anilistId":42,"episode":3,"audio":"sub","streams":[{"type":"hls","url":"https://media.example/master.m3u8","headers":{"Referer":"https://source.example/","Cookie":"private","Origin":"http://unsafe.example"},"subtitles":[{"url":"https://media.example/en.vtt","srclang":"en","label":"English"}],"outro":{"start":1100,"end":1195}}]}"#
         XCTAssertThrowsError(try AniKotoAdapter.decode(payload, anime: 42, episode: 4, gateway: root))
         let streams = try AniKotoAdapter.decode(payload, anime: 42, episode: 3, gateway: root)
         XCTAssertEqual(streams.count, 1); XCTAssertNil(streams[0].headers["Cookie"])
         XCTAssertNil(streams[0].headers["Origin"]); XCTAssertEqual(streams[0].subtitles.first?.language, "en")
+        XCTAssertEqual(streams[0].skipMarkers.outro?.target(at: 1130, duration: 1200), 1195)
+        XCTAssertNil(streams[0].skipMarkers.intro)
     }
     func testSubtitleConversionDoesNotChangeDialoguePunctuation() {
         let vtt = MediaRelay.webVTT("1\r\n00:00:01,000 --> 00:00:03,000\r\nHello, world!\r\n")

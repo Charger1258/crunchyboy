@@ -76,7 +76,8 @@ struct HiAnimeStreamAdapter: StreamAdapter {
                     guard let url = SafeURL.https(track.src) else { return nil }
                     return SubtitleTrack(url: url, language: track.lang ?? "und", label: track.label ?? "Subtitles")
                 }
-                streams.append(ResolvedStream(url: media, referer: referer, height: height, source: name, subtitles: subtitles))
+                streams.append(ResolvedStream(url: media, referer: referer, height: height, source: name,
+                                              subtitles: subtitles, skipMarkers: config.skip))
             } catch is CancellationError { throw CancellationError() }
             catch {
                 let reason = (error as? URLError).map { Self.networkReason($0) } ?? error.localizedDescription
@@ -99,8 +100,18 @@ struct HiAnimeStreamAdapter: StreamAdapter {
 
     struct PlayerConfig: Decodable {
         let src: String
-        var subtitles: [Track]? = nil
+        let subtitles: [Track]?
+        let skip: PlaybackSkipMarkers
         struct Track: Decodable { let src: String; let lang: String?; let label: String? }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            src = try container.decode(String.self, forKey: .src)
+            subtitles = try container.decodeIfPresent([Track].self, forKey: .subtitles)
+            skip = (try? container.decode(PlaybackSkipMarkers.self, forKey: .skip)) ?? PlaybackSkipMarkers()
+        }
+
+        private enum CodingKeys: String, CodingKey { case src, subtitles, skip }
     }
 
     static func decodePlayer(_ html: String) throws -> PlayerConfig {

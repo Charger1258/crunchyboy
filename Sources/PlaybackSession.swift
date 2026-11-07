@@ -38,6 +38,7 @@ struct PlaybackRequest: Identifiable {
     private var captionTask: Task<Void, Never>?
     private var captionGeneration = UUID()
     private var sourceConfirmed = false
+    private var skipMarkers = PlaybackSkipMarkers()
     private let request: PlaybackRequest
     private let library: LibraryStore
     private let profile: UUID
@@ -72,6 +73,17 @@ struct PlaybackRequest: Identifiable {
         return request.episodes[index + 1]
     }
 
+    var availableSkip: (label: String, target: Double)? {
+        guard status == nil, error == nil, !completed else { return nil }
+        if let target = skipMarkers.intro?.target(at: position, duration: duration) {
+            return ("Skip Intro", target)
+        }
+        if let target = skipMarkers.outro?.target(at: position, duration: duration) {
+            return ("Skip Outro", target)
+        }
+        return nil
+    }
+
     func start() {
         captionScale = library.captionSettings(profile: profile).scale
         pendingSeek = nil
@@ -82,6 +94,7 @@ struct PlaybackRequest: Identifiable {
         if let endedObserver { NotificationCenter.default.removeObserver(endedObserver); self.endedObserver = nil }
         generation = UUID(); let token = generation
         status = "Opening episode…"; error = nil; completed = false
+        skipMarkers = PlaybackSkipMarkers()
         #if targetEnvironment(simulator)
         fixturePaused = false
         #endif
@@ -93,7 +106,10 @@ struct PlaybackRequest: Identifiable {
                 if request.fixtureURL != nil {
                     candidates = [ResolvedStream(url: URL(string: "https://fixture.example/master.m3u8")!, referer: URL(string: "https://fixture.example/")!, height: 360, source: "Local player test", subtitles: [
                         SubtitleTrack(url: URL(string: "https://fixture.example/en.vtt")!, language: "en", label: "English"),
-                        SubtitleTrack(url: URL(string: "https://fixture.example/ar.vtt")!, language: "ar", label: "Arabic")])]
+                        SubtitleTrack(url: URL(string: "https://fixture.example/ar.vtt")!, language: "ar", label: "Arabic")],
+                        skipMarkers: episode.id == request.episode.id
+                            ? PlaybackSkipMarkers(intro: .init(start: 0, end: 3), outro: .init(start: 9, end: 14))
+                            : PlaybackSkipMarkers())]
                 } else if let direct = request.directURL {
                     candidates = [ResolvedStream(url: direct, referer: direct.deletingLastPathComponent(), height: 0, source: "Direct")]
                 } else { candidates = try await resolver.resolve(episode) }
@@ -122,8 +138,9 @@ struct PlaybackRequest: Identifiable {
             local = try await relay.start(candidates[candidateIndex])
             #endif
             let source = candidates[candidateIndex]
-            sourceLabel = source.source
             guard token == generation, !Task.isCancelled else { return }
+            sourceLabel = source.source
+            skipMarkers = source.skipMarkers
             let item = AVPlayerItem(url: local)
             diagnostic("item created; file=\(local.isFileURL)")
             applyQuality(item)
@@ -187,6 +204,8 @@ struct PlaybackRequest: Identifiable {
             Task { await SourceHealth.shared.failed(failed) }
         }
         resetCaptions(); sourceConfirmed = false
+        skipMarkers = PlaybackSkipMarkers()
+        pendingSeek = nil
         candidateIndex += 1
         guard candidateIndex < candidates.count else {
             status = nil; error = "The video couldn’t start on this device. Try again, or choose another episode."; return
@@ -357,6 +376,11 @@ struct PlaybackRequest: Identifiable {
         let time = position
         guard time.isFinite else { return }
         seek(to: time + seconds)
+    }
+
+    func skipCurrentSegment() {
+        guard let segment = availableSkip else { return }
+        seek(to: segment.target)
     }
 
     private func save() {

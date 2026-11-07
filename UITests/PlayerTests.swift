@@ -19,10 +19,21 @@ final class PlayerTests: XCTestCase {
         if app.buttons["Pause"].exists { app.buttons["Pause"].tap() }
         app.sliders["Episode timeline"].adjust(toNormalizedSliderPosition: 0)
         XCTAssertEqual(caption.label, "English subtitles are visible.")
+        let intro = app.buttons["Skip Intro"]
+        XCTAssertTrue(intro.waitForExistence(timeout: 5))
+        capture("player-skip-intro")
+        intro.tap()
+        wait(for: [expectation(for: NSPredicate { _, _ in !intro.exists }, evaluatedWith: nil)], timeout: 5)
         capture("player-01-landscape-English")
         app.buttons["Forward 10 seconds"].tap()
         let sought = expectation(for: NSPredicate { _, _ in caption.label.contains("synchronized after seeking") }, evaluatedWith: nil)
         wait(for: [sought], timeout: 5)
+        let outro = app.buttons["Skip Outro"]
+        XCTAssertTrue(outro.waitForExistence(timeout: 5))
+        capture("player-skip-outro")
+        outro.tap()
+        wait(for: [expectation(for: NSPredicate { _, _ in !outro.exists }, evaluatedWith: nil)], timeout: 5)
+        reveal()
         app.buttons["Back 10 seconds"].tap()
         XCTAssertTrue(app.sliders["Episode timeline"].exists)
         app.buttons["Subtitles"].tap(); app.buttons["Arabic"].tap()
@@ -32,6 +43,8 @@ final class PlayerTests: XCTestCase {
         app.buttons["next-episode"].tap()
         let retained = expectation(for: NSPredicate { _, _ in caption.exists && caption.label.contains("الترجمة العربية") }, evaluatedWith: nil)
         wait(for: [retained], timeout: 10)
+        XCTAssertFalse(intro.exists)
+        XCTAssertFalse(outro.exists)
         reveal()
         if app.buttons["Pause"].exists { app.buttons["Pause"].tap() }
         XCTAssertEqual(app.buttons["Subtitles"].value as? String, "Arabic")

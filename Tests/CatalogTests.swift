@@ -63,11 +63,16 @@ final class CatalogTests: XCTestCase {
     }
 
     func testPlayerConfigurationDecodesWithoutExecutingJavaScript() throws {
-        let json = Data(#"{"src":"https://video.example.org/master.m3u8"}"#.utf8)
+        let json = Data(#"{"src":"https://video.example.org/master.m3u8","skip":{"intro":{"start":15,"end":105},"outro":{"start":1000}}}"#.utf8)
         let mask = Array("otaku-embed-v1".utf8)
         let encoded = Data(json.enumerated().map { index, byte in byte ^ mask[index % mask.count] }).base64EncodedString()
         let player = try HiAnimeStreamAdapter.decodePlayer("window.__P = \"\(encoded)\";")
         XCTAssertEqual(player.src, "https://video.example.org/master.m3u8")
+        XCTAssertEqual(player.skip.intro?.target(at: 15, duration: 1200), 105)
+        XCTAssertNil(player.skip.intro?.target(at: 14.9, duration: 1200))
+        XCTAssertNil(player.skip.intro?.target(at: 105, duration: 1200))
+        XCTAssertNil(player.skip.intro?.target(at: 20, duration: 90))
+        XCTAssertNil(player.skip.outro)
     }
 
     func testResolverNetworkErrorsDescribeTheFailureWithoutExposingURLs() {

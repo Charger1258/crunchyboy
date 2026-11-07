@@ -68,6 +68,21 @@ struct PlaybackScreen: View {
                         .padding(.top, 12).padding(.bottom, max(12, geometry.safeAreaInsets.bottom + 4))
                         .transition(.opacity)
                 }
+                if !scrubbing, let segment = session.availableSkip {
+                    Button { session.skipCurrentSegment() } label: {
+                        Label(segment.label, systemImage: "forward.end.fill")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 44)
+                            .background(.white, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .shadow(color: .black.opacity(0.65), radius: 5, y: 2)
+                    .padding(.trailing, max(24, geometry.safeAreaInsets.trailing + 8))
+                    .padding(.bottom, controls ? 155 : max(90, geometry.safeAreaInsets.bottom + 66))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
                 if let status = session.status {
                     VStack(spacing: 12) { ProgressView().tint(.white); Text(status).font(.caption).foregroundStyle(.white.opacity(0.8)) }
                         .padding(20).background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 10)).allowsHitTesting(false)
