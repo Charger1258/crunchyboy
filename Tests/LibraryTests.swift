@@ -2,6 +2,34 @@ import XCTest
 @testable import StreamAnime
 
 final class LibraryTests: XCTestCase {
+    @MainActor func testBulkCloudHistoryKeepsNewestProgressAndPersistsDeletions() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("library.json")
+        let store = LibraryStore(file: file, accountID: "bulk-test")
+        let profile = store.active.id
+        let show = AnimeTitle(slug: "sample-42", name: "Sample", poster: nil)
+        func record(_ id: Int, time: Double, position: Double) -> WatchRecord {
+            WatchRecord(title: show,
+                        episode: Episode(id: String(id), release: show.slug, season: 1, number: Double(id), name: "Episode \(id)"),
+                        position: position, duration: 1200, completed: false,
+                        updatedAt: Date(timeIntervalSince1970: time))
+        }
+        let updates = (1...1000).map { (record: record($0, time: Double($0), position: 100), deleted: false) }
+        store.mergeCloudRecords(updates, profile: profile)
+        store.mergeCloudRecords([
+            (record: record(1, time: 2000, position: 30), deleted: false),
+            (record: record(1, time: 1000, position: 900), deleted: false),
+            (record: record(2, time: 2001, position: 0), deleted: true)
+        ], profile: profile)
+        let restored = LibraryStore(file: file, accountID: "bulk-test")
+        XCTAssertEqual(restored.records(profile: profile).count, 999)
+        XCTAssertEqual(restored.records(profile: profile).first?.episode.id, "1")
+        XCTAssertEqual(restored.records(profile: profile).first?.position, 30)
+        XCTAssertFalse(restored.records(profile: profile).contains { $0.episode.id == "2" })
+        XCTAssertNil(store.storageError)
+    }
+
     @MainActor func testProfileIsolationPersistenceAndNextEpisode() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }

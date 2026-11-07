@@ -157,12 +157,31 @@ struct CaptionSettings: Codable {
     }
 
     func mergeCloudRecord(_ record: WatchRecord, profile: UUID, deleted: Bool) {
-        var rows = records(profile: profile)
-        if let local = rows.first(where: { $0.episode.id == record.episode.id }),
-           local.updatedAt >= record.updatedAt, !deleted { return }
-        rows.removeAll { $0.episode.id == record.episode.id }
-        if !deleted { rows.append(record) }
-        state.history[profile.uuidString] = rows
+        mergeCloudRecords([(record: record, deleted: deleted)], profile: profile)
+    }
+
+    func mergeCloudRecords(_ updates: [(record: WatchRecord, deleted: Bool)], profile: UUID) {
+        var rows = Dictionary(records(profile: profile).map { ($0.episode.id, $0) },
+                              uniquingKeysWith: { first, second in
+                                  first.updatedAt >= second.updatedAt ? first : second
+                              })
+        var changed = false
+        for update in updates {
+            let record = update.record
+            if let local = rows[record.episode.id],
+               local.updatedAt >= record.updatedAt, !update.deleted { continue }
+            if update.deleted {
+                if rows.removeValue(forKey: record.episode.id) != nil { changed = true }
+            } else {
+                rows[record.episode.id] = record
+                changed = true
+            }
+        }
+        guard changed else { return }
+        state.history[profile.uuidString] = rows.values.sorted {
+            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
+            return $0.episode.id < $1.episode.id
+        }
         persist()
     }
 

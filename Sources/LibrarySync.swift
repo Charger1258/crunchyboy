@@ -53,18 +53,31 @@ import Foundation
                 let collection = document.collection("progress")
                 var query: Query = collection.order(by: "updatedAt")
                 if let cursor = progressCursor[id] { query = query.whereField("updatedAt", isGreaterThanOrEqualTo: cursor) }
-                let snapshot = try await query.getDocuments(source: .server)
-                try checkAccount(userID)
                 var remote = progressCache[id] ?? [:]
-                for row in snapshot.documents {
-                    let fields = row.data()
-                    remote[row.documentID] = fields
-                    if let stamp = fields["updatedAt"] as? Timestamp { progressCursor[id] = stamp }
-                    if let record = decode(fields) {
-                        library.mergeCloudRecord(record, profile: profile.id, deleted: fields["deleted"] as? Bool == true)
+                var pageQuery = query.limit(to: 250)
+                var downloaded = 0
+                while true {
+                    let snapshot = try await pageQuery.getDocuments(source: .server)
+                    try checkAccount(userID)
+                    var updates: [(record: WatchRecord, deleted: Bool)] = []
+                    var cursor = progressCursor[id]
+                    for row in snapshot.documents {
+                        let fields = row.data()
+                        remote[row.documentID] = fields
+                        if let stamp = fields["updatedAt"] as? Timestamp { cursor = stamp }
+                        if let record = decode(fields) {
+                            updates.append((record: record, deleted: fields["deleted"] as? Bool == true))
+                        }
                     }
+                    library.mergeCloudRecords(updates, profile: profile.id)
+                    progressCache[id] = remote
+                    progressCursor[id] = cursor
+                    downloaded += snapshot.documents.count
+                    status = "Downloaded \(downloaded) history entries for \(profile.name)"
+                    guard snapshot.documents.count == 250, let last = snapshot.documents.last else { break }
+                    pageQuery = query.start(afterDocument: last).limit(to: 250)
+                    await Task.yield()
                 }
-                progressCache[id] = remote
                 for record in library.records(profile: profile.id) {
                     try checkAccount(userID)
                     guard let fields = encode(record), let watchedAt = fields["watchedAtMs"] as? Int64 else { continue }
