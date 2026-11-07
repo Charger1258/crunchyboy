@@ -1,4 +1,6 @@
 import SwiftUI
+import Combine
+import WidgetKit
 
 @main struct StreamAnimeApp: App {
     @UIApplicationDelegateAdaptor(PlayerAppDelegate.self) private var appDelegate
@@ -26,6 +28,11 @@ private struct AccountLibrary: View {
 
     var body: some View {
         RootScreen().environmentObject(library).environmentObject(sync)
+            .task { await QueueWidgetPublisher.shared.update(library.widgetQueue) }
+            .onReceive(library.objectWillChange.debounce(for: .seconds(2), scheduler: RunLoop.main)) { _ in
+                let snapshot = library.widgetQueue
+                Task { await QueueWidgetPublisher.shared.update(snapshot) }
+            }
             .onAppear {
                 guard let userID else { return }
                 library.requestCloudSync = { [weak sync, weak library] in
@@ -35,7 +42,10 @@ private struct AccountLibrary: View {
             }
             .task(id: phase) {
                 if phase == .active, let userID { await sync.run(library: library, userID: userID) }
-                else if phase != .active { await library.flushPersistence() }
+                else if phase != .active {
+                    await library.flushPersistence()
+                    await QueueWidgetPublisher.shared.update(library.widgetQueue)
+                }
             }
     }
 }
@@ -53,7 +63,20 @@ struct RootScreen: View {
     var body: some View {
         Group {
             #if targetEnvironment(simulator)
-            if ProcessInfo.processInfo.arguments.contains("--player-ui-test"), !fixtureClosed {
+            if ProcessInfo.processInfo.arguments.contains("--queue-widget-ui-test") {
+                VStack(spacing: 20) {
+                    QueueWidgetContent(snapshot: .preview).environment(\.widgetFamily, .systemMedium)
+                        .padding(16).frame(width: 338, height: 170)
+                        .background(Color(white: 0.08), in: RoundedRectangle(cornerRadius: 20))
+                    QueueWidgetContent(snapshot: .preview).environment(\.widgetFamily, .systemSmall)
+                        .padding(16).frame(width: 160, height: 170)
+                        .background(Color(white: 0.08), in: RoundedRectangle(cornerRadius: 20))
+                    QueueWidgetContent(snapshot: QueueSnapshot(profileID: QueueSnapshot.preview.profileID, profileName: "Me", items: []))
+                        .environment(\.widgetFamily, .systemMedium)
+                        .padding(16).frame(width: 338, height: 170)
+                        .background(Color(white: 0.08), in: RoundedRectangle(cornerRadius: 20))
+                }.preferredColorScheme(.dark)
+            } else if ProcessInfo.processInfo.arguments.contains("--player-ui-test"), !fixtureClosed {
                 Color.black.onAppear { fixturePresentation = true }
                     .fullScreenCover(isPresented: $fixturePresentation, onDismiss: { OrientationPolicy.restorePortrait(); fixtureClosed = true }) {
                         LandscapePlayback(request: PlayerFixture.request, library: library, close: { fixturePresentation = false }).ignoresSafeArea()
@@ -64,6 +87,27 @@ struct RootScreen: View {
             if profileChosen { mainTabs }
             else { ProfilesScreen(onComplete: { profileChosen = true }) }
             #endif
+        }
+        .onOpenURL { url in
+            guard let destination = QueueSnapshot.destination(url),
+                  let profile = library.profiles.first(where: { $0.id == destination.profile }) else { return }
+            library.select(profile)
+            profileChosen = true
+            selectedTab = 0
+            guard let id = destination.episode else { return }
+            if let item = library.queue.first(where: { $0.episode.id == id }) {
+                playback = PlaybackRequest(title: item.title, episode: item.episode, episodes: library.episodes(for: item.title))
+            } else if let cache = QueueRefreshCache.read(), cache.baseline.profileID == profile.id,
+                      let showID = cache.discoveries.first(where: { $0.value.id == id })?.key,
+                      let title = library.continuing.first(where: { $0.title.id == showID })?.title {
+                Task {
+                    guard let detail = try? await catalog.details(title),
+                          library.active.id == profile.id,
+                          let episode = detail.episodes.first(where: { $0.id == id }) else { return }
+                    library.remember(detail)
+                    playback = PlaybackRequest(title: title, episode: episode, episodes: detail.episodes)
+                }
+            }
         }
     }
 

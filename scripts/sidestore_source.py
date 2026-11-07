@@ -27,6 +27,8 @@ def build_site(ipa, output, notes, release_date=None, previous=None, base_url=BA
         if len(infos) != 1:
             raise ValueError("Expected exactly one device application")
         info = plistlib.loads(archive.read(infos[0]))
+        entitlement_path = infos[0].replace("Info.plist", "archived-expanded-entitlements.xcent")
+        entitlements = plistlib.loads(archive.read(entitlement_path)) if entitlement_path in archive.namelist() else {}
     if info.get("CFBundleIdentifier") != BUNDLE or "iPhoneOS" not in info.get("CFBundleSupportedPlatforms", []):
         raise ValueError("Expected the Stream Anime iPhone device build")
     version, build = str(info["CFBundleShortVersionString"]), str(info["CFBundleVersion"])
@@ -58,7 +60,7 @@ def build_site(ipa, output, notes, release_date=None, previous=None, base_url=BA
            "iconURL": f"{base_url}/icon.png", "tintColor": "FF7A00", "category": "entertainment",
            "versions": versions, "version": version, "versionDate": current["date"],
            "downloadURL": download_url, "size": current["size"],
-           "appPermissions": {"entitlements": [], "privacy": {
+           "appPermissions": {"entitlements": sorted(entitlements), "privacy": {
                k: v for k, v in info.items() if k.startswith("NS") and k.endswith("UsageDescription")}}}
     source = {"name": "Stream Anime", "identifier": "com.streamanime.updates",
               "subtitle": "Stream Anime updates", "website": base_url,

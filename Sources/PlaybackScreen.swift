@@ -68,7 +68,7 @@ struct PlaybackScreen: View {
                         .padding(.top, 12).padding(.bottom, max(12, geometry.safeAreaInsets.bottom + 4))
                         .transition(.opacity)
                 }
-                if !scrubbing, let segment = session.availableSkip {
+                if let segment = session.availableSkip {
                     Button { session.skipCurrentSegment() } label: {
                         Label(segment.label, systemImage: "forward.end.fill")
                             .font(.subheadline.bold())
@@ -78,6 +78,7 @@ struct PlaybackScreen: View {
                             .background(.white, in: Capsule())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(segment.label)
                     .shadow(color: .black.opacity(0.65), radius: 5, y: 2)
                     .padding(.trailing, max(24, geometry.safeAreaInsets.trailing + 8))
                     .padding(.bottom, controls ? 155 : max(90, geometry.safeAreaInsets.bottom + 66))

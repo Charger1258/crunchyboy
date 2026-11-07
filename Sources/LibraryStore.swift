@@ -161,6 +161,32 @@ struct CaptionSettings: Codable {
     var queue: [ContinueItem] {
         continuing.filter { !$0.caughtUp && !isQueueHidden($0.title) }
     }
+
+    var widgetQueue: QueueSnapshot {
+        var snapshot = QueueSnapshot(profileID: active.id, profileName: active.name, items: queue.prefix(4).map {
+            QueueSnapshot.Item(id: $0.episode.id, title: $0.title.name,
+                               episode: $0.episode.label, artwork: $0.episode.image ?? $0.title.poster)
+        })
+        let completedIDs = Set(records.filter(\.completed).map { $0.episode.id })
+        snapshot.watched = continuing.filter { !isQueueHidden($0.title) }.map { item in
+            let sequence = episodes(for: item.title)
+            let following = sequence.drop(while: { $0.id != item.episode.id })
+            var seen = Set<String>()
+            let releases = following.compactMap { episode -> QueueSnapshot.WatchedShow.Release? in
+                guard seen.insert(episode.release).inserted else { return nil }
+                return .init(slug: episode.release, season: episode.season)
+            }
+            let relevantIDs = Set(sequence.map(\.id)).intersection(completedIDs)
+            return QueueSnapshot.WatchedShow(id: item.title.id, title: item.title.name, poster: item.title.poster,
+                releases: releases, anchorNumber: item.episode.localNumber ?? item.episode.number,
+                completedIDs: relevantIDs,
+                next: item.caughtUp ? nil : QueueSnapshot.Item(id: item.episode.id, title: item.title.name,
+                    episode: item.episode.label, artwork: item.episode.image ?? item.title.poster,
+                    release: item.episode.release, season: item.episode.season,
+                    number: item.episode.localNumber ?? item.episode.number))
+        }
+        return snapshot
+    }
     func mergeSaved(_ entry: SavedAnime, profile: UUID) {
         var entries = savedEntries(profile: profile)
         guard (entries[entry.title.slug]?.changedAtMs ?? -1) < entry.changedAtMs else { return }
