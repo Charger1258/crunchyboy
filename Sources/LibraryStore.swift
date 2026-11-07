@@ -257,8 +257,17 @@ struct CaptionSettings: Codable {
     var continuing: [ContinueItem] {
         if let continuingCache { return continuingCache }
         var seen = Set<String>()
+        var seriesIDs: [String: String] = [:]
         let items: [ContinueItem] = records.sorted { $0.updatedAt > $1.updatedAt }.compactMap { record in
-            guard seen.insert(record.title.id).inserted else { return nil }
+            let key = record.title.slug + "\n" + record.title.name
+            let seriesID: String
+            if let cached = seriesIDs[key] {
+                seriesID = cached
+            } else {
+                seriesID = record.title.id
+                seriesIDs[key] = seriesID
+            }
+            guard seen.insert(seriesID).inserted else { return nil }
             let sequence = episodes(for: record.title)
             if record.completed, let index = sequence.firstIndex(where: { $0.id == record.episode.id }), index + 1 < sequence.count {
                 let next = sequence[index + 1]
