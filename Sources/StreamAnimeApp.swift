@@ -35,6 +35,7 @@ private struct AccountLibrary: View {
             }
             .task(id: phase) {
                 if phase == .active, let userID { await sync.run(library: library, userID: userID) }
+                else if phase != .active { await library.flushPersistence() }
             }
     }
 }

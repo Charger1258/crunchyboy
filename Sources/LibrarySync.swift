@@ -9,6 +9,7 @@ import Foundation
     private var syncing = false
     private var progressCache: [String: [String: [String: Any]]] = [:]
     private var progressCursor: [String: Timestamp] = [:]
+    private var episodeKeys: [String: String] = [:]
 
     func run(library: LibraryStore, userID: String) async {
         while !Task.isCancelled {
@@ -78,12 +79,14 @@ import Foundation
                     pageQuery = query.start(afterDocument: last).limit(to: 250)
                     await Task.yield()
                 }
-                for record in library.records(profile: profile.id) {
+                for (index, record) in library.records(profile: profile.id).enumerated() {
+                    if index.isMultiple(of: 100) { await Task.yield() }
                     try checkAccount(userID)
-                    guard let fields = encode(record), let watchedAt = fields["watchedAtMs"] as? Int64 else { continue }
                     let key = episodeKey(record.episode.id)
+                    let watchedAt = Int64(record.updatedAt.timeIntervalSince1970 * 1000)
                     if let previous = remote[key], previous["deleted"] as? Bool == true ||
                         ((previous["watchedAtMs"] as? NSNumber)?.int64Value ?? 0) >= watchedAt { continue }
+                    guard let fields = encode(record) else { continue }
                     try await commit(fields, to: collection.document(key), watchedAt: watchedAt)
                 }
                 try await syncWatchlist(library, profile: profile.id, document: document, userID: userID)
@@ -164,7 +167,10 @@ import Foundation
     }
 
     private func episodeKey(_ id: String) -> String {
-        SHA256.hash(data: Data("hianime\n\(id)".utf8)).map { String(format: "%02x", $0) }.joined()
+        if let cached = episodeKeys[id] { return cached }
+        let key = SHA256.hash(data: Data("hianime\n\(id)".utf8)).map { String(format: "%02x", $0) }.joined()
+        episodeKeys[id] = key
+        return key
     }
 
     private func encode(_ record: WatchRecord) -> [String: Any]? {

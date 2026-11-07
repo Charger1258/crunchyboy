@@ -50,10 +50,19 @@ struct CaptionSettings: Codable {
         var watchlists: [String: [String: SavedAnime]]? = nil
         var captions: [String: CaptionSettings]? = nil
     }
-    @Published private var state: State
+    @Published private var state: State {
+        didSet {
+            historyIndex = nil
+            continuingCache = nil
+        }
+    }
     @Published private(set) var storageError: String?
     private let file: URL
     private let accountID: String?
+    private let persistenceQueue = DispatchQueue(label: "com.streamanime.library.persistence", qos: .utility)
+    private var saveGeneration = 0
+    private var historyIndex: [String: WatchRecord]?
+    private var continuingCache: [ContinueItem]?
     var requestCloudSync: (() -> Void)?
 
     init(file: URL? = nil, accountID: String? = nil) {
@@ -199,9 +208,16 @@ struct CaptionSettings: Codable {
         persist()
     }
     func episodes(for title: AnimeTitle) -> [Episode] { state.episodes[title.id] ?? state.episodes[title.slug] ?? [] }
-    func watched(_ episode: Episode) -> Bool { records.first { $0.episode.id == episode.id }?.completed ?? false }
+    private var indexedRecords: [String: WatchRecord] {
+        if let historyIndex { return historyIndex }
+        let index = Dictionary(records.map { ($0.episode.id, $0) },
+                               uniquingKeysWith: { first, second in first.updatedAt >= second.updatedAt ? first : second })
+        historyIndex = index
+        return index
+    }
+    func watched(_ episode: Episode) -> Bool { indexedRecords[episode.id]?.completed ?? false }
     func progress(_ episode: Episode) -> Double {
-        guard let row = records.first(where: { $0.episode.id == episode.id }), row.duration > 0 else { return 0 }
+        guard let row = indexedRecords[episode.id], row.duration > 0 else { return 0 }
         return min(1, max(0, row.position / row.duration))
     }
 
@@ -229,14 +245,19 @@ struct CaptionSettings: Codable {
     }
 
     func resume(_ episode: Episode, profile: UUID? = nil) -> Double {
+        if profile == nil || profile == active.id {
+            guard let record = indexedRecords[episode.id], !record.completed else { return 0 }
+            return record.position
+        }
         let rows = state.history[(profile ?? active.id).uuidString] ?? []
         guard let record = rows.first(where: { $0.episode.id == episode.id }), !record.completed else { return 0 }
         return record.position
     }
 
     var continuing: [ContinueItem] {
+        if let continuingCache { return continuingCache }
         var seen = Set<String>()
-        return records.sorted { $0.updatedAt > $1.updatedAt }.compactMap { record in
+        let items: [ContinueItem] = records.sorted { $0.updatedAt > $1.updatedAt }.compactMap { record in
             guard seen.insert(record.title.id).inserted else { return nil }
             let sequence = episodes(for: record.title)
             if record.completed, let index = sequence.firstIndex(where: { $0.id == record.episode.id }), index + 1 < sequence.count {
@@ -247,13 +268,34 @@ struct CaptionSettings: Codable {
             return ContinueItem(title: record.title, episode: current,
                                 position: record.completed ? 0 : record.position, caughtUp: record.completed)
         }
+        continuingCache = items
+        return items
     }
 
     private func persist() {
-        do {
-            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try JSONEncoder().encode(state).write(to: file, options: .atomic)
-            storageError = nil
-        } catch { storageError = "Your latest progress couldn’t be saved on this device." }
+        saveGeneration += 1
+        let generation = saveGeneration
+        let snapshot = state
+        let destination = file
+        persistenceQueue.async { [weak self] in
+            let error: String?
+            do {
+                try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try JSONEncoder().encode(snapshot).write(to: destination, options: .atomic)
+                error = nil
+            } catch {
+                error = "Your latest progress couldn’t be saved on this device."
+            }
+            Task { @MainActor [weak self] in
+                guard let self, self.saveGeneration == generation, self.storageError != error else { return }
+                self.storageError = error
+            }
+        }
+    }
+
+    func flushPersistence() async {
+        await withCheckedContinuation { continuation in
+            persistenceQueue.async { continuation.resume() }
+        }
     }
 }

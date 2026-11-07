@@ -2,7 +2,7 @@ import XCTest
 @testable import StreamAnime
 
 final class LibraryTests: XCTestCase {
-    @MainActor func testBulkCloudHistoryKeepsNewestProgressAndPersistsDeletions() {
+    @MainActor func testBulkCloudHistoryKeepsNewestProgressAndPersistsDeletions() async {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
         let file = folder.appendingPathComponent("library.json")
@@ -22,6 +22,7 @@ final class LibraryTests: XCTestCase {
             (record: record(1, time: 1000, position: 900), deleted: false),
             (record: record(2, time: 2001, position: 0), deleted: true)
         ], profile: profile)
+        await store.flushPersistence()
         let restored = LibraryStore(file: file, accountID: "bulk-test")
         XCTAssertEqual(restored.records(profile: profile).count, 999)
         XCTAssertEqual(restored.records(profile: profile).first?.episode.id, "1")
@@ -56,6 +57,7 @@ final class LibraryTests: XCTestCase {
         XCTAssertTrue(store.add(name: "Guest", symbol: "hare.fill"))
         store.select(store.profiles.last!)
         XCTAssertTrue(store.continuing.isEmpty)
+        await store.flushPersistence()
         let restored = LibraryStore(file: file)
         restored.select(original)
         XCTAssertTrue(restored.continuing.first!.caughtUp)
@@ -64,8 +66,9 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(restored.episodes(for: show).count, 3)
         XCTAssertEqual(restored.continuing.first?.episode.id, third.id)
         XCTAssertFalse(restored.continuing.first!.caughtUp)
+        await restored.flushPersistence()
     }
-    @MainActor func testSyncMergesNewestProgressAndKeepsProfilesPrivate() throws {
+    @MainActor func testSyncMergesNewestProgressAndKeepsProfilesPrivate() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
         let file = folder.appendingPathComponent("library.json")
@@ -87,12 +90,13 @@ final class LibraryTests: XCTestCase {
         XCTAssertTrue(store.continuing.isEmpty)
         XCTAssertTrue(store.watchlist.isEmpty)
         store.select(store.profiles.first!)
+        await store.flushPersistence()
         let restored = LibraryStore(file: file, accountID: "synthetic-account")
         XCTAssertEqual(restored.resume(episode), 30)
         XCTAssertEqual(restored.records.first?.episode.localNumber, 1)
     }
 
-    @MainActor func testWatchlistTombstonesAndCaptionPreferencesPersistPerProfile() {
+    @MainActor func testWatchlistTombstonesAndCaptionPreferencesPersistPerProfile() async {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
         let file = folder.appendingPathComponent("library.json")
@@ -112,6 +116,7 @@ final class LibraryTests: XCTestCase {
         store.select(store.profiles.last!)
         XCTAssertEqual(store.captionSettings(profile: store.active.id).language, "en")
         XCTAssertTrue(store.watchlist.isEmpty)
+        await store.flushPersistence()
         let restored = LibraryStore(file: file, accountID: "synthetic-account")
         XCTAssertEqual(restored.captionSettings(profile: profile).language, "ar")
         XCTAssertEqual(restored.captionSettings(profile: profile).size, "large")
