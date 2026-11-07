@@ -14,6 +14,29 @@ final class CatalogTests: XCTestCase {
         XCTAssertEqual(titles[0].poster?.host, "images.example.org")
     }
 
+    func testPopularityUsesSeparateProviderChartsAndPreservesRankOrder() throws {
+        let html = """
+        <div id="top-viewed-day"><ul>
+          <li><h3 class="film-name"><a href="/daily-leader-21" title="Daily Leader">Daily Leader</a></h3><img class="film-poster-img" data-src="https://images.example.org/day.jpg"></li>
+          <li><h3 class="film-name"><a href="/watch/shared-22" title="Shared">Shared</a></h3></li>
+          <li><h3 class="film-name"><a href="/daily-leader-21" title="Duplicate">Duplicate</a></h3></li>
+          <li><h3 class="film-name"><a href="https://example.org/foreign-99" title="Foreign">Foreign</a></h3></li>
+          <li><h3 class="film-name"><a href="/search" title="Search">Search</a></h3></li>
+        </ul></div>
+        <div id="top-viewed-week"><ul>
+          <li><h3 class="film-name"><a href="/weekly-leader-23">Weekly Leader</a></h3><img class="film-poster-img" src="https://images.example.org/week.jpg"></li>
+          <li><h3 class="film-name"><a href="/shared-22" title="Shared">Shared</a></h3></li>
+        </ul></div>
+        <div id="top-viewed-month"><ul><li><h3 class="film-name"><a href="/monthly-24" title="Monthly">Monthly</a></h3></li></ul></div>
+        """
+        let rankings = try AnimeCatalog.parseRankings(html)
+        XCTAssertEqual(rankings[.today]?.map(\.slug), ["daily-leader-21", "shared-22"])
+        XCTAssertEqual(rankings[.week]?.map(\.slug), ["weekly-leader-23", "shared-22"])
+        XCTAssertEqual(rankings[.today]?.first?.poster?.absoluteString, "https://images.example.org/day.jpg")
+        XCTAssertEqual(rankings[.week]?.first?.name, "Weekly Leader")
+        XCTAssertEqual(try AnimeCatalog.parseRankings("<html></html>")[.today]?.count, 0)
+    }
+
     func testEpisodesVerifyProviderIdentityAndPreserveFractionalNumbers() throws {
         let html = """
         <a class="ep-item" data-id="21" data-number="1.5" href="https://hianime.at/watch/sample-42?ep=21"><span class="ep-name">Between chapters</span></a>

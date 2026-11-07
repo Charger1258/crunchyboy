@@ -7,7 +7,7 @@ import SwiftUI
     @State private var titles: [AnimeTitle] = []
     @State private var loading = false
     @State private var error: String?
-    private let categories = [("Popular", "/most-popular"), ("New episodes", "/recently-updated"), ("Series", "/tv"), ("Films", "/movie")]
+    private let categories = CatalogShelf.allCases
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
@@ -15,7 +15,7 @@ import SwiftUI
                     HStack(spacing: 10) {
                         ForEach(categories.indices, id: \.self) { index in
                             Button { category = index } label: {
-                                Text(categories[index].0).font(.subheadline.weight(.semibold)).padding(.horizontal, 16).padding(.vertical, 11)
+                                Text(categories[index].title).font(.subheadline.weight(.semibold)).padding(.horizontal, 16).padding(.vertical, 11)
                                     .foregroundStyle(category == index ? .black : .white)
                                     .background(category == index ? AnimeTheme.accent : AnimeTheme.surface, in: RoundedRectangle(cornerRadius: 4))
                             }
@@ -40,7 +40,7 @@ import SwiftUI
         let submitted = query.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             if !submitted.isEmpty { try await Task.sleep(for: .milliseconds(350)) }
-            let result = try await (submitted.isEmpty ? catalog.browse(path: categories[category].1) : catalog.search(submitted))
+            let result = try await (submitted.isEmpty ? catalog.browse(shelf: categories[category]) : catalog.search(submitted))
             try Task.checkCancellation(); titles = result; loading = false
         } catch { if !Task.isCancelled { self.error = error.localizedDescription; loading = false } }
     }

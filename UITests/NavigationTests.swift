@@ -14,11 +14,14 @@ final class NavigationTests: XCTestCase {
         let profile = app.buttons.matching(identifier: "profileChoice").firstMatch
         XCTAssertTrue(profile.waitForExistence(timeout: 5)); profile.tap()
         XCTAssertTrue(app.buttons["tab-0"].waitForExistence(timeout: 10))
-        let featured = app.buttons["featuredShow"]
-        _ = featured.waitForExistence(timeout: 20)
+        XCTAssertTrue(app.staticTexts["Popular today"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.buttons["featuredShow"].exists)
+        XCTAssertFalse(app.staticTexts["FEATURED ANIME"].exists)
+        let firstTitle = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "home-title-today-")).firstMatch
+        _ = firstTitle.waitForExistence(timeout: 20)
         capture("02-home")
-        if featured.exists {
-            featured.tap()
+        if firstTitle.exists {
+            firstTitle.tap()
             _ = app.buttons.matching(identifier: "episodeRow").firstMatch.waitForExistence(timeout: 40)
             if app.buttons["Season 1"].exists { XCTAssertEqual(app.buttons["Season 1"].value as? String, "Selected") }
             capture("03-episodes")

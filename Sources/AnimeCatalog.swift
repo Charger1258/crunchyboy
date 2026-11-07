@@ -1,6 +1,35 @@
 import Foundation
 import SwiftSoup
 
+enum CatalogShelf: String, CaseIterable, Identifiable {
+    case today, week, updated, series, films
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .today: return "Popular today"
+        case .week: return "Popular this week"
+        case .updated: return "Recently updated"
+        case .series: return "Anime series"
+        case .films: return "Anime films"
+        }
+    }
+    var path: String? {
+        switch self {
+        case .today, .week: return nil
+        case .updated: return "/recently-updated"
+        case .series: return "/tv"
+        case .films: return "/movie"
+        }
+    }
+    var chartID: String? {
+        switch self {
+        case .today: return "top-viewed-day"
+        case .week: return "top-viewed-week"
+        default: return nil
+        }
+    }
+}
+
 protocol AnimeCatalogProviding {
     func browse(path: String) async throws -> [AnimeTitle]
     func search(_ query: String) async throws -> [AnimeTitle]
@@ -11,6 +40,48 @@ actor AnimeCatalog: AnimeCatalogProviding {
     static let root = URL(string: "https://hianime.at")!
     private let http = HTTPClient()
     private var cache: [String: ShowDetail] = [:]
+    private var rankingCache: (loaded: Date, lists: [CatalogShelf: [AnimeTitle]])?
+
+    func browse(shelf: CatalogShelf, refresh: Bool = false) async throws -> [AnimeTitle] {
+        if let path = shelf.path { return try await browse(path: path) }
+        if !refresh, let cached = rankingCache, Date().timeIntervalSince(cached.loaded) < 60,
+           let titles = cached.lists[shelf], !titles.isEmpty { return titles }
+        let html = try await http.text(Self.root.appendingPathComponent("home"))
+        let lists = try Self.parseRankings(html)
+        rankingCache = (Date(), lists)
+        guard let titles = lists[shelf], !titles.isEmpty else {
+            throw StreamError.unavailable("This popularity chart couldn’t load. Try again.")
+        }
+        return titles
+    }
+
+    static func parseRankings(_ html: String) throws -> [CatalogShelf: [AnimeTitle]] {
+        let page = try SwiftSoup.parse(html, root.absoluteString)
+        var lists: [CatalogShelf: [AnimeTitle]] = [:]
+        for shelf in CatalogShelf.allCases {
+            guard let chart = shelf.chartID else { continue }
+            var seen = Set<String>()
+            var titles: [AnimeTitle] = []
+            for row in try page.select("#\(chart) li").array() {
+                guard let link = try row.select(".film-name a[href]").first(),
+                      let url = SafeURL.https(try link.absUrl("href"), host: root.host) else { continue }
+                let parts = url.path.split(separator: "/")
+                guard parts.count == 1 || (parts.count == 2 && parts[0] == "watch") else { continue }
+                let slug = url.lastPathComponent
+                guard slug.range(of: "^[a-z0-9-]+-[0-9]+$", options: .regularExpression) != nil,
+                      seen.insert(slug).inserted else { continue }
+                let label = try link.attr("title").trimmingCharacters(in: .whitespacesAndNewlines)
+                let name = try (label.isEmpty ? link.text() : label)
+                guard !name.isEmpty else { continue }
+                let image = try row.select("img.film-poster-img").first()
+                let lazy = try image?.absUrl("data-src") ?? ""
+                let immediate = try image?.absUrl("src") ?? ""
+                titles.append(AnimeTitle(slug: slug, name: name, poster: SafeURL.https(lazy) ?? SafeURL.https(immediate)))
+            }
+            lists[shelf] = Self.group(titles)
+        }
+        return lists
+    }
 
     func browse(path: String = "/most-popular") async throws -> [AnimeTitle] {
         let url = Self.root.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))

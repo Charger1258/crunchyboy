@@ -7,34 +7,10 @@ import SwiftUI
     @State private var shelves: [String: [AnimeTitle]] = [:]
     @State private var errors: [String: String] = [:]
     @State private var loading = false
-    private let sections = [("Popular now", "/most-popular"), ("Recently updated", "/recently-updated"),
-                            ("Anime series", "/tv"), ("Anime films", "/movie")]
+    private let sections = CatalogShelf.allCases
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
-                if let featured = shelves[sections[0].0]?.first {
-                    NavigationLink(value: featured) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            CoverImage(url: featured.poster).frame(height: 235).clipped()
-                                .overlay(alignment: .bottom) { LinearGradient(colors: [.clear, AnimeTheme.background], startPoint: .top, endPoint: .bottom).frame(height: 90) }
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("FEATURED ANIME").font(.system(size: 10, weight: .bold)).tracking(1.5).foregroundStyle(.secondary)
-                                Text(featured.name).font(.system(size: 27, weight: .bold)).foregroundStyle(.white).lineLimit(2)
-                                HStack {
-                                    Text("View episodes").font(.subheadline.bold())
-                                    Spacer()
-                                    Image(systemName: "chevron.right").font(.caption.bold())
-                                }.padding(15).foregroundStyle(.black)
-                                    .background(AnimeTheme.accent, in: RoundedRectangle(cornerRadius: 4))
-                            }.padding(.horizontal, 16)
-                        }
-                    }.buttonStyle(.plain).accessibilityIdentifier("featuredShow")
-                } else {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("STREAM ANIME").font(.caption.bold()).tracking(2).foregroundStyle(AnimeTheme.accent)
-                        Text("Find your next anime.").font(.title.bold())
-                    }.padding(.horizontal, 16).padding(.top, 20)
-                }
                 if !library.continuing.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Continue watching").font(.system(size: 20, weight: .bold)).padding(.horizontal, 16)
@@ -52,10 +28,10 @@ import SwiftUI
                     }
                 }
                 if loading && shelves.isEmpty { ProgressView("Finding anime...").frame(maxWidth: .infinity).padding(30) }
-                ForEach(sections, id: \.0) { section in
+                ForEach(sections) { section in
                     VStack(alignment: .leading, spacing: 14) {
-                        Text(section.0).font(.system(size: 20, weight: .bold)).padding(.horizontal, 16)
-                        if let error = errors[section.0], shelves[section.0] == nil {
+                        Text(section.title).font(.system(size: 20, weight: .bold)).padding(.horizontal, 16)
+                        if let error = errors[section.title], shelves[section.title] == nil {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(error).font(.subheadline).foregroundStyle(.secondary)
                                 Button("Try again") { Task { await load() } }.buttonStyle(.bordered)
@@ -63,14 +39,14 @@ import SwiftUI
                         }
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(alignment: .top, spacing: 14) {
-                                ForEach(shelves[section.0] ?? []) { title in
-                                    NavigationLink(value: title) { PosterTile(title: title).frame(width: 125) }.buttonStyle(.plain)
+                                ForEach(shelves[section.title] ?? []) { title in
+                                    NavigationLink(value: title) { PosterTile(title: title).frame(width: 125) }.buttonStyle(.plain).accessibilityIdentifier("home-title-\(section.rawValue)-\(title.slug)")
                                 }
                             }.padding(.horizontal, 16)
                         }
                     }
                 }
-            }.padding(.bottom, 24)
+            }.padding(.top, 16).padding(.bottom, 24)
         }.background(AnimeTheme.background).navigationTitle("Stream Anime").navigationBarTitleDisplayMode(.inline)
             .task { if shelves.isEmpty { await load() } }
             .task(id: library.continuing.prefix(6).map(\.title.id)) { await refreshWatching() }
@@ -82,10 +58,10 @@ import SwiftUI
         for section in sections {
             guard !Task.isCancelled else { break }
             do {
-                let titles = try await catalog.browse(path: section.1)
+                let titles = try await catalog.browse(shelf: section, refresh: section == .today)
                 try Task.checkCancellation()
-                shelves[section.0] = titles; errors[section.0] = nil
-            } catch { if !Task.isCancelled { errors[section.0] = error.localizedDescription } }
+                shelves[section.title] = titles; errors[section.title] = nil
+            } catch { if !Task.isCancelled { errors[section.title] = error.localizedDescription } }
         }
         loading = false
     }
