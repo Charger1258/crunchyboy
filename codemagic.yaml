@@ -4,7 +4,7 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 20
     environment:
-      xcode: '26.5'
+      xcode: latest
     scripts:
       - name: Install XcodeGen
         script: |
@@ -18,7 +18,7 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 45
     environment:
-      xcode: '26.5'
+      xcode: latest
     scripts:
       - name: Install XcodeGen
         script: |

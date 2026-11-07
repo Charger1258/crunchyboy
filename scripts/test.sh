@@ -1,40 +1,22 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+python3 scripts/validate_sources.py
 xcodegen generate --spec project.yml
 DEVICE_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); ids=[v["udid"] for a in d["devices"].values() for v in a if v.get("isAvailable") and v["name"].startswith("iPhone")]; print(ids[0] if ids else "")')"
 test -n "$DEVICE_ID" || { echo 'No available iPhone simulator runtime. Install an iOS runtime in Xcode.'; exit 1; }
 mkdir -p build
 RESULT="$PWD/build/Tests-$(date +%s).xcresult"
 export_attachments() {
-  mkdir -p build/artifacts/screenshots/build-service
-  if [ -d "$HOME/Library/Logs/DiagnosticReports" ]; then
-    find "$HOME/Library/Logs/DiagnosticReports" -type f -name '*BuildService*' -exec cp {} build/artifacts/screenshots/build-service/ \; || true
-  fi
+  mkdir -p build/artifacts/screenshots
   find "$HOME/Library/Developer/CoreSimulator/Devices" -name player-diagnostics.log -exec cat {} \; > build/artifacts/screenshots/player-diagnostics.txt 2>&1 || true
   if [ -d "$RESULT" ]; then
     xcrun xcresulttool export attachments --path "$RESULT" --output-path "$PWD/build/artifacts/screenshots" || true
   fi
 }
 trap export_attachments EXIT
-# Bound compiler concurrency and test only the selected simulator architecture.
-run_tests() {
-  xcodebuild test -jobs 2 -project StreamAnime.xcodeproj -scheme StreamAnime \
-    -configuration Release \
-    -parallel-testing-enabled NO \
-    -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
-    -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES ONLY_ACTIVE_ARCH=YES
-}
-LOG="$PWD/build/simulator-tests.log"
-if run_tests 2>&1 | tee "$LOG"; then
-  exit 0
-fi
-# Xcode explicitly requests another build after its build-service aborts. Preserve the
-# failed result and reuse this machine's compiled dependencies; never retry test failures.
-if grep -Fq 'The Xcode build system has crashed' "$LOG"; then
-  echo 'Retrying once after the Xcode build-service crash, using the compiled cache.'
-  RESULT="$PWD/build/Tests-$(date +%s)-retry.xcresult"
-  run_tests 2>&1 | tee "$PWD/build/simulator-tests-retry.log"
-else
-  exit 1
-fi
+xcodebuild test -project StreamAnime.xcodeproj -scheme StreamAnime \
+  -configuration Release \
+  -parallel-testing-enabled NO \
+  -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
+  -resultBundlePath "$RESULT" CODE_SIGNING_ALLOWED=NO ENABLE_TESTABILITY=YES

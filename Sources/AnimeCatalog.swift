@@ -50,7 +50,7 @@ actor AnimeCatalog: AnimeCatalogProviding {
         let lists = try Self.parseRankings(html)
         rankingCache = (Date(), lists)
         guard let titles = lists[shelf], !titles.isEmpty else {
-            throw StreamError.unavailable("This popularity chart couldn’t load. Try again.")
+            throw StreamError.unavailable("This popularity chart couldnâ€™t load. Try again.")
         }
         return titles
     }

@@ -6,9 +6,6 @@ options:
 settings:
   base:
     SWIFT_VERSION: '5.0'
-    # Avoid the libSwiftDriver build-planning trap observed on remote Mac images.
-    SWIFT_USE_INTEGRATED_DRIVER: 'NO'
-    SWIFT_ENABLE_EXPLICIT_MODULES: 'NO'
     IPHONEOS_DEPLOYMENT_TARGET: '17.0'
     CODE_SIGNING_ALLOWED: 'NO'
     MARKETING_VERSION: 0.6.1
