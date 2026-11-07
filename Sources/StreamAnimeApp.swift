@@ -2,12 +2,25 @@ import SwiftUI
 
 @main struct StreamAnimeApp: App {
     @UIApplicationDelegateAdaptor(PlayerAppDelegate.self) private var appDelegate
-    @StateObject private var library = LibraryStore()
+    @StateObject private var account = SyncAccount()
     var body: some Scene {
         WindowGroup {
-            RootScreen().environmentObject(library).tint(AnimeTheme.accent).preferredColorScheme(.dark)
+            AccountLibrary(userID: account.userID)
+                .id(account.userID)
+                .environmentObject(account)
+                .tint(AnimeTheme.accent).preferredColorScheme(.dark)
         }
     }
+}
+
+private struct AccountLibrary: View {
+    @StateObject private var library: LibraryStore
+
+    init(userID: String?) {
+        _library = StateObject(wrappedValue: LibraryStore(accountID: userID))
+    }
+
+    var body: some View { RootScreen().environmentObject(library) }
 }
 
 struct RootScreen: View {

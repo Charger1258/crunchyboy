@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import SwiftUI
 
@@ -36,8 +37,13 @@ struct ContinueItem: Identifiable {
     @Published private(set) var storageError: String?
     private let file: URL
 
-    init(file: URL? = nil) {
-        self.file = file ?? URL.applicationSupportDirectory.appendingPathComponent("StreamAnime/library.json")
+    init(file: URL? = nil, accountID: String? = nil) {
+        let directory = URL.applicationSupportDirectory.appendingPathComponent("StreamAnime")
+        let accountFile = accountID.map {
+            let key = SHA256.hash(data: Data($0.utf8)).map { String(format: "%02x", $0) }.joined()
+            return directory.appendingPathComponent("accounts").appendingPathComponent(key + ".json")
+        }
+        self.file = file ?? accountFile ?? directory.appendingPathComponent("library.json")
         if let data = try? Data(contentsOf: self.file), let restored = try? JSONDecoder().decode(State.self, from: data),
            !restored.profiles.isEmpty {
             state = restored

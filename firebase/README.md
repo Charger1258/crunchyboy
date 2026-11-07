@@ -1,8 +1,11 @@
 # Stream Anime account sync
 
-Status: backend rules and shared contract prepared; not deployed. Neither app is
-connected yet. The Firebase project ID and registered client configuration are
-required before implementing and testing live sign-in and synchronization.
+Status: both clients are registered in `crunchyboy-1be9d`. Email/password is
+enabled and the Firestore rules were published on the default Standard database
+in `nam5` (United States). The avatar index exemption is deployed. Both client
+configurations were retrieved with the Firebase CLI. The apps have sign-in
+screens and account-scoped local libraries. Device sign-in and cross-device
+synchronization still require verification and integration, respectively.
 
 ## Project setup
 

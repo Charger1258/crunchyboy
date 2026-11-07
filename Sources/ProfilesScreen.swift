@@ -55,14 +55,31 @@ struct ProfilesScreen: View {
 
 struct SettingsScreen: View {
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var account: SyncAccount
     let showProfiles: () -> Void
     let play: (PlaybackRequest) -> Void
     @State private var streamURL = ""
     @State private var invalidURL = false
+    @State private var showingAccount = false
+    @State private var accountError: String?
     @AppStorage("subtitleLanguage") private var subtitleLanguage = "en"
     @AppStorage("autoNextEpisode") private var autoNextEpisode = false
     var body: some View {
         Form {
+            if account.auth != nil {
+                Section("Stream Anime account") {
+                    if let email = account.email {
+                        Text(email)
+                        Button("Sign out", role: .destructive) {
+                            do { try account.signOut() }
+                            catch { accountError = error.localizedDescription }
+                        }
+                    } else {
+                        Button("Sign in or create account") { showingAccount = true }
+                    }
+                    if let accountError { Text(accountError).foregroundStyle(.red) }
+                }
+            }
             Section("Your profile") {
                 HStack(spacing: 16) {
                     ProfileAvatar(symbol: library.active.symbol, size: 62)
@@ -104,6 +121,7 @@ struct SettingsScreen: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }.scrollContentBackground(.hidden).background(AnimeTheme.background).navigationTitle("Account").navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showingAccount) { SyncAccountScreen() }
             .alert("Use an HTTPS address", isPresented: $invalidURL) {
                 Button("OK", role: .cancel) {}
             } message: { Text("Enter the full HTTPS stream URL.") }
