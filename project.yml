@@ -8,8 +8,8 @@ settings:
     SWIFT_VERSION: '5.0'
     IPHONEOS_DEPLOYMENT_TARGET: '17.0'
     CODE_SIGNING_ALLOWED: 'NO'
-    MARKETING_VERSION: 0.5.0
-    CURRENT_PROJECT_VERSION: 5
+    MARKETING_VERSION: 0.6.0
+    CURRENT_PROJECT_VERSION: 6
 packages:
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk.git
@@ -26,6 +26,8 @@ targets:
       - package: SwiftSoup
       - package: Firebase
         product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.streamanime.iphone

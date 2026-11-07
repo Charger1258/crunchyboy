@@ -72,9 +72,9 @@ import SwiftUI
                 }
             }.padding(.bottom, 24)
         }.background(AnimeTheme.background).navigationTitle("Stream Anime").navigationBarTitleDisplayMode(.inline)
-            .task { if shelves.isEmpty { await load() }; await refreshWatching() }
+            .task { if shelves.isEmpty { await load() } }
+            .task(id: library.continuing.prefix(6).map(\.title.id)) { await refreshWatching() }
             .refreshable { await load(); await refreshWatching() }
-            .onChange(of: library.active.id) { _, _ in Task { await refreshWatching() } }
     }
     @MainActor private func load() async {
         guard !loading else { return }

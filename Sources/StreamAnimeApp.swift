@@ -15,12 +15,21 @@ import SwiftUI
 
 private struct AccountLibrary: View {
     @StateObject private var library: LibraryStore
+    @StateObject private var sync = LibrarySync()
+    @Environment(\.scenePhase) private var phase
+    let userID: String?
 
     init(userID: String?) {
+        self.userID = userID
         _library = StateObject(wrappedValue: LibraryStore(accountID: userID))
     }
 
-    var body: some View { RootScreen().environmentObject(library) }
+    var body: some View {
+        RootScreen().environmentObject(library).environmentObject(sync)
+            .task(id: phase) {
+                if phase == .active, let userID { await sync.run(library: library, userID: userID) }
+            }
+    }
 }
 
 struct RootScreen: View {
@@ -62,7 +71,7 @@ struct RootScreen: View {
                     .navigationDestination(for: AnimeTitle.self) { title in ShowScreen(title: title, catalog: catalog, play: { playback = $0 }) }
             }.tag(1).tabItem { Label("Browse", systemImage: "square.grid.2x2") }
             NavigationStack {
-                WatchLibraryScreen(play: { playback = $0 }, browse: { selectedTab = 1 })
+                WatchLibraryScreen(catalog: catalog, play: { playback = $0 }, browse: { selectedTab = 1 })
                     .navigationDestination(for: AnimeTitle.self) { title in ShowScreen(title: title, catalog: catalog, play: { playback = $0 }) }
             }.tag(2).tabItem { Label("My Library", systemImage: "bookmark") }
             NavigationStack {

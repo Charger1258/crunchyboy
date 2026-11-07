@@ -6,6 +6,7 @@ import SwiftUI
     @Published private(set) var userID: String?
     @Published private(set) var email: String?
     let auth: Auth?
+    private var listener: AuthStateDidChangeListenerHandle?
 
     init() {
         if FirebaseApp.app() == nil,
@@ -15,6 +16,9 @@ import SwiftUI
         }
         auth = FirebaseApp.app().map { Auth.auth(app: $0) }
         update()
+        listener = auth?.addStateDidChangeListener { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.update() }
+        }
     }
 
     func signIn(email: String, password: String, create: Bool) async throws {

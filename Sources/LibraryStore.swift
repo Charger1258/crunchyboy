@@ -6,6 +6,7 @@ struct ViewerProfile: Identifiable, Codable {
     let id: UUID
     var name: String
     var symbol: String
+    var avatarImage: Data? = nil
     static let symbols = ["cat.fill", "hare.fill", "bolt.fill", "moon.stars.fill", "flame.fill", "sparkles"]
 }
 
@@ -27,6 +28,7 @@ struct ContinueItem: Identifiable {
 }
 
 @MainActor final class LibraryStore: ObservableObject {
+    static let defaultCloudProfile = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
     private struct State: Codable {
         var profiles: [ViewerProfile]
         var active: UUID
@@ -48,7 +50,7 @@ struct ContinueItem: Identifiable {
            !restored.profiles.isEmpty {
             state = restored
         } else {
-            let profile = ViewerProfile(id: UUID(), name: "Me", symbol: "cat.fill")
+            let profile = ViewerProfile(id: accountID == nil ? UUID() : Self.defaultCloudProfile, name: "Me", symbol: "cat.fill")
             state = State(profiles: [profile], active: profile.id)
         }
     }
@@ -56,6 +58,40 @@ struct ContinueItem: Identifiable {
     var profiles: [ViewerProfile] { state.profiles }
     var active: ViewerProfile { state.profiles.first { $0.id == state.active } ?? state.profiles[0] }
     var records: [WatchRecord] { state.history[active.id.uuidString] ?? [] }
+    func records(profile: UUID) -> [WatchRecord] { state.history[profile.uuidString] ?? [] }
+
+    func mergeCloudProfile(_ profile: ViewerProfile) {
+        if let index = state.profiles.firstIndex(where: { $0.id == profile.id }) {
+            guard state.profiles[index].name != profile.name || state.profiles[index].symbol != profile.symbol
+                    || state.profiles[index].avatarImage != profile.avatarImage else { return }
+            state.profiles[index] = profile
+        } else {
+            state.profiles.append(profile)
+        }
+        persist()
+    }
+
+    func mergeCloudRecord(_ record: WatchRecord, profile: UUID, deleted: Bool) {
+        var rows = records(profile: profile)
+        if let local = rows.first(where: { $0.episode.id == record.episode.id }),
+           local.updatedAt >= record.updatedAt, !deleted { return }
+        rows.removeAll { $0.episode.id == record.episode.id }
+        if !deleted { rows.append(record) }
+        state.history[profile.uuidString] = rows
+        persist()
+    }
+
+    func importGuestProfiles() {
+        let guest = LibraryStore()
+        for profile in guest.profiles where !state.profiles.contains(where: { $0.id == profile.id }) {
+            state.profiles.append(profile)
+            state.history[profile.id.uuidString] = guest.records(profile: profile.id)
+        }
+        for (id, episodes) in guest.state.episodes {
+            state.episodes[id] = AnimeCatalog.merge(episodes, state.episodes[id] ?? [])
+        }
+        persist()
+    }
     func episodes(for title: AnimeTitle) -> [Episode] { state.episodes[title.id] ?? state.episodes[title.slug] ?? [] }
     func watched(_ episode: Episode) -> Bool { records.first { $0.episode.id == episode.id }?.completed ?? false }
     func progress(_ episode: Episode) -> Double {

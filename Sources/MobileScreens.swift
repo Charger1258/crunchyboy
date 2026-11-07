@@ -48,6 +48,7 @@ import SwiftUI
 
 struct WatchLibraryScreen: View {
     @EnvironmentObject private var library: LibraryStore
+    let catalog: AnimeCatalog
     let play: (PlaybackRequest) -> Void
     let browse: () -> Void
     var body: some View {
@@ -67,6 +68,14 @@ struct WatchLibraryScreen: View {
                 }
             }.padding(16)
         }.background(AnimeTheme.background).navigationTitle("My Library").navigationBarTitleDisplayMode(.inline)
+            .task(id: library.continuing.prefix(6).map(\.title.id)) {
+                for title in library.continuing.prefix(6).map(\.title) {
+                    guard !Task.isCancelled else { return }
+                    if library.episodes(for: title).isEmpty, let detail = try? await catalog.details(title) {
+                        library.remember(detail)
+                    }
+                }
+            }
     }
     private func row(_ item: ContinueItem) -> some View {
         VStack(alignment: .leading, spacing: 10) {

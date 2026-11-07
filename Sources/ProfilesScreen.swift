@@ -36,7 +36,7 @@ struct ProfilesScreen: View {
                             ForEach(library.profiles) { profile in
                                 Button { library.select(profile); finish() } label: {
                                     VStack(spacing: 12) {
-                                        ProfileAvatar(symbol: profile.symbol, selected: library.active.id == profile.id)
+                                        ProfileAvatar(symbol: profile.symbol, selected: library.active.id == profile.id, image: profile.avatarImage)
                                         Text(profile.name).font(.subheadline.bold()).foregroundStyle(.primary).lineLimit(2)
                                     }
                                 }.buttonStyle(.plain).accessibilityIdentifier("profileChoice")
@@ -56,12 +56,14 @@ struct ProfilesScreen: View {
 struct SettingsScreen: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var account: SyncAccount
+    @EnvironmentObject private var sync: LibrarySync
     let showProfiles: () -> Void
     let play: (PlaybackRequest) -> Void
     @State private var streamURL = ""
     @State private var invalidURL = false
     @State private var showingAccount = false
     @State private var accountError: String?
+    @State private var confirmingImport = false
     @AppStorage("subtitleLanguage") private var subtitleLanguage = "en"
     @AppStorage("autoNextEpisode") private var autoNextEpisode = false
     var body: some View {
@@ -70,6 +72,11 @@ struct SettingsScreen: View {
                 Section("Stream Anime account") {
                     if let email = account.email {
                         Text(email)
+                        Text(sync.status).font(.footnote).foregroundStyle(.secondary)
+                        Button("Sync now") {
+                            if let id = account.userID { Task { await sync.sync(library: library, userID: id) } }
+                        }
+                        Button("Copy guest profiles and history") { confirmingImport = true }
                         Button("Sign out", role: .destructive) {
                             do { try account.signOut() }
                             catch { accountError = error.localizedDescription }
@@ -82,7 +89,7 @@ struct SettingsScreen: View {
             }
             Section("Your profile") {
                 HStack(spacing: 16) {
-                    ProfileAvatar(symbol: library.active.symbol, size: 62)
+                    ProfileAvatar(symbol: library.active.symbol, size: 62, image: library.active.avatarImage)
                     VStack(alignment: .leading, spacing: 5) { Text(library.active.name).font(.title3.bold()); Text("Local profile").font(.caption).foregroundStyle(.secondary) }
                 }.padding(.vertical, 8)
                 Button { showProfiles() } label: { Label(library.active.name, systemImage: library.active.symbol) }
@@ -122,6 +129,12 @@ struct SettingsScreen: View {
             }
         }.scrollContentBackground(.hidden).background(AnimeTheme.background).navigationTitle("Account").navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showingAccount) { SyncAccountScreen() }
+            .confirmationDialog("Copy guest profiles to this account?", isPresented: $confirmingImport) {
+                Button("Copy profiles and history") {
+                    library.importGuestProfiles()
+                    if let id = account.userID { Task { await sync.sync(library: library, userID: id) } }
+                }
+            } message: { Text("The copied profiles and watch history will be available on devices signed into this account.") }
             .alert("Use an HTTPS address", isPresented: $invalidURL) {
                 Button("OK", role: .cancel) {}
             } message: { Text("Enter the full HTTPS stream URL.") }
