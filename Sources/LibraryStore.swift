@@ -49,6 +49,7 @@ struct CaptionSettings: Codable {
         var episodes: [String: [Episode]] = [:]
         var watchlists: [String: [String: SavedAnime]]? = nil
         var captions: [String: CaptionSettings]? = nil
+        var hiddenQueue: [String: Set<String>]? = nil
     }
     @Published private var state: State {
         didSet {
@@ -139,10 +140,26 @@ struct CaptionSettings: Codable {
     }
     func isSaved(_ title: AnimeTitle) -> Bool { savedEntries(profile: active.id)[title.slug]?.deleted == false }
     func toggleSaved(_ title: AnimeTitle) {
+        let removing = isSaved(title)
         let now = max((savedEntries(profile: active.id)[title.slug]?.changedAtMs ?? 0) + 1,
                       Int64(Date().timeIntervalSince1970 * 1000))
-        mergeSaved(SavedAnime(title: title, changedAtMs: now, deleted: isSaved(title)), profile: active.id)
+        mergeSaved(SavedAnime(title: title, changedAtMs: now, deleted: removing), profile: active.id)
+        setQueueHidden(title, hidden: removing)
         requestCloudSync?()
+    }
+    func isQueueHidden(_ title: AnimeTitle) -> Bool {
+        state.hiddenQueue?[active.id.uuidString]?.contains(title.id) == true
+    }
+    func setQueueHidden(_ title: AnimeTitle, hidden: Bool) {
+        var all = state.hiddenQueue ?? [:]
+        var entries = all[active.id.uuidString] ?? []
+        if hidden { entries.insert(title.id) } else { entries.remove(title.id) }
+        all[active.id.uuidString] = entries
+        state.hiddenQueue = all
+        persist()
+    }
+    var queue: [ContinueItem] {
+        continuing.filter { !$0.caughtUp && !isQueueHidden($0.title) }
     }
     func mergeSaved(_ entry: SavedAnime, profile: UUID) {
         var entries = savedEntries(profile: profile)
@@ -151,6 +168,11 @@ struct CaptionSettings: Codable {
         var all = state.watchlists ?? [:]
         all[profile.uuidString] = entries
         state.watchlists = all
+        if entry.deleted {
+            var hidden = state.hiddenQueue ?? [:]
+            hidden[profile.uuidString, default: []].insert(entry.title.id)
+            state.hiddenQueue = hidden
+        }
         persist()
     }
 
@@ -269,8 +291,8 @@ struct CaptionSettings: Codable {
             }
             guard seen.insert(seriesID).inserted else { return nil }
             let sequence = episodes(for: record.title)
-            if record.completed, let index = sequence.firstIndex(where: { $0.id == record.episode.id }), index + 1 < sequence.count {
-                let next = sequence[index + 1]
+            if record.completed, let index = sequence.firstIndex(where: { $0.id == record.episode.id }),
+               let next = sequence.dropFirst(index + 1).first(where: { indexedRecords[$0.id]?.completed != true }) {
                 return ContinueItem(title: record.title, episode: next, position: resume(next), caughtUp: false)
             }
             let current = sequence.first { $0.id == record.episode.id } ?? record.episode

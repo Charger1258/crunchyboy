@@ -2,6 +2,47 @@ import XCTest
 @testable import StreamAnime
 
 final class LibraryTests: XCTestCase {
+    @MainActor func testQueueTracksNewEpisodesAndRemembersHiddenShowsPerProfile() async {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("library.json")
+        let store = LibraryStore(file: file)
+        let profile = store.active
+        let show = AnimeTitle(slug: "queue-example-42", name: "Queue Example", poster: nil)
+        let first = Episode(id: "1", release: show.slug, season: 1, number: 1, name: "First")
+        let second = Episode(id: "2", release: show.slug, season: 1, number: 2, name: "Second")
+        store.remember(ShowDetail(title: show, episodes: [first]))
+        XCTAssertTrue(store.queue.isEmpty)
+        store.record(profile: profile.id, title: show, episode: first, position: 30, duration: 1200, completed: false)
+        XCTAssertEqual(store.queue.first?.episode.id, first.id)
+        store.record(profile: profile.id, title: show, episode: first, position: 1200, duration: 1200, completed: true)
+        XCTAssertTrue(store.queue.isEmpty)
+        store.remember(ShowDetail(title: show, episodes: [first, second]))
+        XCTAssertEqual(store.queue.first?.episode.id, second.id)
+        store.setQueueHidden(show, hidden: true)
+        XCTAssertTrue(store.queue.isEmpty)
+        XCTAssertEqual(store.records.count, 1)
+        await store.flushPersistence()
+        let restored = LibraryStore(file: file)
+        XCTAssertTrue(restored.queue.isEmpty)
+        restored.setQueueHidden(show, hidden: false)
+        XCTAssertEqual(restored.queue.first?.episode.id, second.id)
+        restored.toggleSaved(show)
+        restored.toggleSaved(show)
+        XCTAssertFalse(restored.isSaved(show))
+        XCTAssertTrue(restored.queue.isEmpty)
+        restored.setQueueHidden(show, hidden: false)
+        XCTAssertEqual(restored.queue.first?.episode.id, second.id)
+        XCTAssertTrue(restored.add(name: "Other", symbol: "hare.fill"))
+        restored.select(restored.profiles.last!)
+        XCTAssertTrue(restored.queue.isEmpty)
+        restored.select(profile)
+        XCTAssertEqual(restored.queue.first?.episode.id, second.id)
+        restored.record(profile: profile.id, title: show, episode: second, position: 1200, duration: 1200, completed: true)
+        XCTAssertTrue(restored.queue.isEmpty)
+        await restored.flushPersistence()
+    }
+
     @MainActor func testBulkCloudHistoryKeepsNewestProgressAndPersistsDeletions() async {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }

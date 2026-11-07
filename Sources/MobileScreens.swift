@@ -69,14 +69,19 @@ struct WatchLibraryScreen: View {
                 if !library.watchlist.isEmpty {
                     Text("Watchlist").font(.title2.bold())
                     ForEach(library.watchlist) { title in
-                        NavigationLink(value: title) {
-                            HStack(spacing: 12) {
-                                CoverImage(url: title.poster).frame(width: 44, height: 64).clipShape(.rect(cornerRadius: 5))
-                                Text(title.name).foregroundStyle(.primary)
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                            }
-                        }.buttonStyle(.plain)
+                        HStack(spacing: 12) {
+                            NavigationLink(value: title) {
+                                HStack(spacing: 12) {
+                                    CoverImage(url: title.poster).frame(width: 44, height: 64).clipShape(.rect(cornerRadius: 5))
+                                    Text(title.name).foregroundStyle(.primary)
+                                    Spacer()
+                                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                                }
+                            }.buttonStyle(.plain)
+                            Button(role: .destructive) { library.toggleSaved(title) } label: {
+                                Image(systemName: "bookmark.slash").padding(8)
+                            }.accessibilityLabel("Remove \(title.name) from Watchlist")
+                        }
                     }
                 }
             }.padding(16)

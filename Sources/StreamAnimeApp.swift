@@ -192,6 +192,11 @@ struct ShowScreen: View {
                                 Label(library.isSaved(title) ? "Saved" : "Save to watchlist",
                                       systemImage: library.isSaved(title) ? "bookmark.fill" : "bookmark")
                             }.buttonStyle(.bordered)
+                            if library.continuing.contains(where: { $0.title.id == title.id }) {
+                                Button(library.isQueueHidden(title) ? "Show in Queue" : "Remove from Queue") {
+                                    library.setQueueHidden(title, hidden: !library.isQueueHidden(title))
+                                }.font(.subheadline)
+                            }
                             if let detail { Text("\(detail.seasons.filter { $0 > 0 }.count) seasons · \(detail.episodes.count) episodes").font(.caption).foregroundStyle(.secondary) }
                             if let current = library.continuing.first(where: { $0.title.id == title.id }) {
                                 Button(current.caughtUp ? "Watch again" : current.position > 0 ? "Resume episode" : "Play next episode") {
