@@ -37,4 +37,57 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(restored.continuing.first?.episode.id, third.id)
         XCTAssertFalse(restored.continuing.first!.caughtUp)
     }
+    @MainActor func testSyncMergesNewestProgressAndKeepsProfilesPrivate() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("library.json")
+        let store = LibraryStore(file: file, accountID: "synthetic-account")
+        let first = store.active.id
+        let show = AnimeTitle(slug: "sample-42", name: "Sample", poster: nil)
+        let episode = Episode(id: "100", release: show.slug, season: 2, number: 13, name: "First", localNumber: 1)
+        func record(_ position: Double, _ time: Double) -> WatchRecord {
+            WatchRecord(title: show, episode: episode, position: position, duration: 1200, completed: false,
+                        updatedAt: Date(timeIntervalSince1970: time))
+        }
+        store.mergeCloudRecord(record(200, 200), profile: first, deleted: false)
+        store.mergeCloudRecord(record(900, 100), profile: first, deleted: false)
+        XCTAssertEqual(store.resume(episode), 200)
+        store.mergeCloudRecord(record(30, 300), profile: first, deleted: false)
+        XCTAssertEqual(store.resume(episode), 30, "A newer seek backwards must win")
+        XCTAssertTrue(store.add(name: "Second", symbol: "hare.fill"))
+        store.select(store.profiles.last!)
+        XCTAssertTrue(store.continuing.isEmpty)
+        XCTAssertTrue(store.watchlist.isEmpty)
+        store.select(store.profiles.first!)
+        let restored = LibraryStore(file: file, accountID: "synthetic-account")
+        XCTAssertEqual(restored.resume(episode), 30)
+        XCTAssertEqual(restored.records.first?.episode.localNumber, 1)
+    }
+
+    @MainActor func testWatchlistTombstonesAndCaptionPreferencesPersistPerProfile() {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("library.json")
+        let store = LibraryStore(file: file, accountID: "synthetic-account")
+        let profile = store.active.id
+        let show = AnimeTitle(slug: "sample-42", name: "Sample", poster: nil)
+        store.mergeSaved(SavedAnime(title: show, changedAtMs: 200, deleted: true), profile: profile)
+        store.mergeSaved(SavedAnime(title: show, changedAtMs: 100, deleted: false), profile: profile)
+        XCTAssertFalse(store.isSaved(show), "An offline old save cannot restore a removed title")
+        store.toggleSaved(show)
+        XCTAssertTrue(store.isSaved(show))
+        store.setCaptionSettings(profile: profile, language: "ar", size: "large")
+        store.setCaptionSettings(profile: profile, size: "invalid")
+        XCTAssertEqual(store.captionSettings(profile: profile).size, "large")
+        store.mergeCaptionSettings(CaptionSettings(language: "en", size: "small", changedAtMs: 1), profile: profile)
+        XCTAssertTrue(store.add(name: "Second", symbol: "hare.fill"))
+        store.select(store.profiles.last!)
+        XCTAssertEqual(store.captionSettings(profile: store.active.id).language, "en")
+        XCTAssertTrue(store.watchlist.isEmpty)
+        let restored = LibraryStore(file: file, accountID: "synthetic-account")
+        XCTAssertEqual(restored.captionSettings(profile: profile).language, "ar")
+        XCTAssertEqual(restored.captionSettings(profile: profile).size, "large")
+        XCTAssertEqual(restored.savedEntries(profile: profile).count, 1)
+    }
+
 }

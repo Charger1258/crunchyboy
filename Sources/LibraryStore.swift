@@ -107,7 +107,10 @@ struct CaptionSettings: Codable {
             guard code.range(of: "^(off|[a-z]{2,3})$", options: .regularExpression) != nil else { return }
             settings.language = code
         }
-        if let size { settings.size = size }
+        if let size {
+            guard ["small", "normal", "large"].contains(size) else { return }
+            settings.size = size
+        }
         settings.changedAtMs = max(settings.changedAtMs + 1, Int64(Date().timeIntervalSince1970 * 1000))
         mergeCaptionSettings(settings, profile: profile)
         requestCloudSync?()
@@ -165,9 +168,9 @@ struct CaptionSettings: Codable {
 
     func importGuestProfiles() {
         let guest = LibraryStore()
-        for profile in guest.profiles where !state.profiles.contains(where: { $0.id == profile.id }) {
-            state.profiles.append(profile)
-            state.history[profile.id.uuidString] = guest.records(profile: profile.id)
+        for profile in guest.profiles {
+            if !state.profiles.contains(where: { $0.id == profile.id }) { state.profiles.append(profile) }
+            for record in guest.records(profile: profile.id) { mergeCloudRecord(record, profile: profile.id, deleted: false) }
             for entry in guest.savedEntries(profile: profile.id).values { mergeSaved(entry, profile: profile.id) }
             if let settings = guest.savedCaptionSettings(profile: profile.id) { mergeCaptionSettings(settings, profile: profile.id) }
         }

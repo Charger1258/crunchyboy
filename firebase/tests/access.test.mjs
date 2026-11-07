@@ -102,3 +102,11 @@ test('caption preferences are private and reject unknown values', async () => {
   await assertFails(updateDoc(doc(store, path), {subtitleSize: 'huge', changedAtMs: changedAtMs + 1, revision: 2, updatedAt: serverTimestamp()}));
   await assertSucceeds(updateDoc(doc(store, path), {subtitleLanguage: 'off', changedAtMs: changedAtMs + 1, revision: 2, updatedAt: serverTimestamp()}));
 });
+
+test('release-local episode numbers are optional, bounded and support split seasons', async () => {
+  const store = await seed();
+  await assertSucceeds(updateDoc(doc(store, progressPath), {localEpisodeNumber: 1, episodeNumber: 13, revision: 2, updatedAt: serverTimestamp()}));
+  for (const value of [-1, 1000001, '1']) {
+    await assertFails(updateDoc(doc(store, progressPath), {localEpisodeNumber: value, revision: 3, updatedAt: serverTimestamp()}));
+  }
+});

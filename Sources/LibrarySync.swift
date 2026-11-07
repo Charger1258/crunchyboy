@@ -163,7 +163,7 @@ import Foundation
         let position = Int64(min(duration > 0 ? Double(duration) / 1000 : 604800, max(0, record.position)) * 1000)
         return ["schemaVersion": 1, "provider": "hianime", "episodeId": episode.id,
                 "releaseId": episode.release, "seriesId": "hianime:" + record.title.slug,
-                "season": episode.season, "episodeNumber": episode.number, "title": String(record.title.name.prefix(512)),
+                "season": episode.season, "episodeNumber": episode.number, "localEpisodeNumber": episode.localNumber ?? episode.number, "title": String(record.title.name.prefix(512)),
                 "episodeTitle": String(episode.name.prefix(512)), "posterUrl": String((record.title.poster?.absoluteString ?? "").prefix(2048)),
                 "positionMs": position, "durationMs": duration, "completed": record.completed,
                 "watchedAtMs": Int64(record.updatedAt.timeIntervalSince1970 * 1000),
@@ -179,7 +179,7 @@ import Foundation
               let watched = fields["watchedAtMs"] as? NSNumber else { return nil }
         let slug = series.hasPrefix("hianime:") ? String(series.dropFirst(8)) : release
         return WatchRecord(title: AnimeTitle(slug: slug, name: title, poster: SafeURL.https(fields["posterUrl"] as? String ?? "")),
-                           episode: Episode(id: id, release: release, season: season.intValue, number: number.doubleValue, name: name),
+                           episode: Episode(id: id, release: release, season: season.intValue, number: number.doubleValue, name: name, localNumber: (fields["localEpisodeNumber"] as? NSNumber)?.doubleValue),
                            position: position.doubleValue / 1000, duration: duration.doubleValue / 1000,
                            completed: fields["completed"] as? Bool == true,
                            updatedAt: Date(timeIntervalSince1970: watched.doubleValue / 1000))
