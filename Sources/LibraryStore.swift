@@ -278,17 +278,17 @@ struct CaptionSettings: Codable {
         let snapshot = state
         let destination = file
         persistenceQueue.async { [weak self] in
-            let error: String?
+            let saveError: String?
             do {
                 try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try JSONEncoder().encode(snapshot).write(to: destination, options: .atomic)
-                error = nil
+                saveError = nil
             } catch {
-                error = "Your latest progress couldn’t be saved on this device."
+                saveError = "Your latest progress couldn’t be saved on this device."
             }
             Task { @MainActor [weak self] in
-                guard let self, self.saveGeneration == generation, self.storageError != error else { return }
-                self.storageError = error
+                guard let self, self.saveGeneration == generation, self.storageError != saveError else { return }
+                self.storageError = saveError
             }
         }
     }
