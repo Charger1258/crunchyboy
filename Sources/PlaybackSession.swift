@@ -72,6 +72,7 @@ struct PlaybackRequest: Identifiable {
     }
 
     func start() {
+        pendingSeek = nil
         diagnostic("start")
         shuttingDown = false
         task?.cancel(); startupTimeout?.cancel(); player.pause()
@@ -198,8 +199,10 @@ struct PlaybackRequest: Identifiable {
         completed = true; save(); episode = next; start()
     }
 
+    private var pendingSeek: UUID?
+
     private func tick(_ position: Double) {
-        guard position.isFinite, position > 0, !shuttingDown else { return }
+        guard position.isFinite, position > 0, !shuttingDown, pendingSeek == nil else { return }
         if !sourceConfirmed, position > resumePosition + 1, candidateIndex < candidates.count {
             sourceConfirmed = true
             let source = candidates[candidateIndex]
@@ -329,9 +332,19 @@ struct PlaybackRequest: Identifiable {
         guard seconds.isFinite else { return }
         let total = duration
         let target = max(0, min(seconds, total.isFinite && total > 0 ? total : seconds))
+        let seek = UUID()
+        pendingSeek = seek
         position = target
         captionText = SubtitleDocument.visible(cues, at: target - subtitleOffset)
-        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+            Task { @MainActor [weak self] in
+                guard let self, self.pendingSeek == seek else { return }
+                self.pendingSeek = nil
+                guard finished else { return }
+                self.position = target
+                self.captionText = SubtitleDocument.visible(self.cues, at: target - self.subtitleOffset)
+            }
+        }
     }
 
     func skip(_ seconds: Double) {

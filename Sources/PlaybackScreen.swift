@@ -107,11 +107,12 @@ struct PlaybackScreen: View {
     }
     private var transport: some View {
         HStack(spacing: 56) {
-            Button { session.skip(-10); showControls() } label: { Image(systemName: "gobackward.10").font(.system(size: 31)).frame(width: 56, height: 56) }.accessibilityLabel("Back 10 seconds")
+            Button { session.skip(-10); showControls() } label: { Image(systemName: "gobackward.10").font(.system(size: 31)).frame(width: 56, height: 56).contentShape(Rectangle()) }.accessibilityLabel("Back 10 seconds")
             Button { session.togglePlay(); showControls() } label: {
                 Image(systemName: session.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 37)).frame(width: 72, height: 72)
+                    .contentShape(Rectangle())
             }.accessibilityLabel(session.isPlaying ? "Pause" : "Play")
-            Button { session.skip(10); showControls() } label: { Image(systemName: "goforward.10").font(.system(size: 31)).frame(width: 56, height: 56) }.accessibilityLabel("Forward 10 seconds")
+            Button { session.skip(10); showControls() } label: { Image(systemName: "goforward.10").font(.system(size: 31)).frame(width: 56, height: 56).contentShape(Rectangle()) }.accessibilityLabel("Forward 10 seconds")
         }.foregroundStyle(.white).shadow(color: .black.opacity(0.9), radius: 8)
     }
     private var bottomBar: some View {
