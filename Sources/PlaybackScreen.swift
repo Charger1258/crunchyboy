@@ -29,7 +29,6 @@ struct PlaybackScreen: View {
     @State private var scrubbing = false
     @State private var seekPosition: Double = 0
     @State private var hideTask: Task<Void, Never>?
-    @AppStorage("captionScale") private var captionScale = 1.0
     init(request: PlaybackRequest, library: LibraryStore, close: @escaping () -> Void) {
         _session = StateObject(wrappedValue: PlaybackSession(request: request, library: library))
         self.close = close
@@ -49,7 +48,7 @@ struct PlaybackScreen: View {
                     }))
                 if !session.captionText.isEmpty {
                     Text(session.captionText)
-                        .font(.system(size: min(30, max(18, geometry.size.height * 0.057)) * captionScale, weight: .semibold))
+                        .font(.system(size: min(30, max(18, geometry.size.height * 0.057)) * session.captionScale, weight: .semibold))
                         .foregroundStyle(.white).multilineTextAlignment(.center).lineLimit(6)
                         .padding(.horizontal, 10).padding(.vertical, 5).background(.black.opacity(0.62), in: RoundedRectangle(cornerRadius: 4))
                         .shadow(color: .black, radius: 2, y: 1)
@@ -149,7 +148,9 @@ struct PlaybackScreen: View {
             }
             if session.selectedCaption != "off" { Button("Reload subtitles") { session.selectCaption(session.selectedCaption); showControls() } }
             Menu("Text size") {
-                Button("Small") { captionScale = 0.85 }; Button("Normal") { captionScale = 1 }; Button("Large") { captionScale = 1.25 }
+                Button("Small") { session.setCaptionSize("small") }
+                Button("Normal") { session.setCaptionSize("normal") }
+                Button("Large") { session.setCaptionSize("large") }
             }
             Menu("Subtitle timing: \(session.subtitleOffset, specifier: "%.1f")s") {
                 Button("Show 0.5s earlier") { session.setSubtitleOffset(session.subtitleOffset - 0.5); showControls() }

@@ -57,6 +57,38 @@ service cloud.firestore {
           && request.resource.data.episodeId == resource.data.episodeId;
         allow delete: if false;
       }
+      match /watchlist/{slug} {
+        function savedShow(data) {
+          return data.keys().hasAll(['schemaVersion', 'title', 'posterUrl', 'deleted', 'changedAtMs', 'revision', 'updatedAt'])
+            && data.keys().hasOnly(['schemaVersion', 'title', 'posterUrl', 'deleted', 'changedAtMs', 'revision', 'updatedAt'])
+            && versioned(data) && slug.matches('[a-z0-9-]+-[0-9]+') && slug.size() <= 256
+            && text(data.title, 512) && text(data.posterUrl, 2048) && data.deleted is bool
+            && data.changedAtMs is int && data.changedAtMs >= 0
+            && data.changedAtMs <= request.time.toMillis() + 300000
+            && get(/databases/$(database)/documents/users/$(uid)/profiles/$(profileId)).data.deleted == false;
+        }
+        allow read: if owner(uid);
+        allow create: if owner(uid) && savedShow(request.resource.data) && request.resource.data.revision == 1;
+        allow update: if owner(uid) && savedShow(request.resource.data)
+          && request.resource.data.revision == resource.data.revision + 1
+          && request.resource.data.changedAtMs > resource.data.changedAtMs;
+      }
+      match /settings/playback {
+        function settings(data) {
+          return data.keys().hasAll(['schemaVersion', 'subtitleLanguage', 'subtitleSize', 'changedAtMs', 'revision', 'updatedAt'])
+            && data.keys().hasOnly(['schemaVersion', 'subtitleLanguage', 'subtitleSize', 'changedAtMs', 'revision', 'updatedAt'])
+            && versioned(data) && data.subtitleLanguage is string && data.subtitleLanguage.matches('off|[a-z]{2,3}')
+            && data.subtitleSize in ['small', 'normal', 'large']
+            && data.changedAtMs is int && data.changedAtMs >= 0
+            && data.changedAtMs <= request.time.toMillis() + 300000
+            && get(/databases/$(database)/documents/users/$(uid)/profiles/$(profileId)).data.deleted == false;
+        }
+        allow read: if owner(uid);
+        allow create: if owner(uid) && settings(request.resource.data) && request.resource.data.revision == 1;
+        allow update: if owner(uid) && settings(request.resource.data)
+          && request.resource.data.revision == resource.data.revision + 1
+          && request.resource.data.changedAtMs > resource.data.changedAtMs;
+      }
     }
     // Everything outside the explicit account paths is denied.
     match /{document=**} { allow read, write: if false; }

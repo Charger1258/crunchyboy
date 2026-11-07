@@ -45,6 +45,7 @@ test('stale device revision cannot overwrite newer progress', async () => {
   const store = await seed();
   await assertSucceeds(updateDoc(doc(store, progressPath), {positionMs: 60000, revision: 2, updatedAt: serverTimestamp()}));
   await assertFails(setDoc(doc(store, progressPath), {...progress(), revision: 2}));
+  await assertFails(updateDoc(doc(store, progressPath), {watchedAtMs: 1, revision: 3, updatedAt: serverTimestamp()}));
   // An intentional seek backwards is valid against the latest revision.
   await assertSucceeds(updateDoc(doc(store, progressPath), {positionMs: 10000, revision: 3, updatedAt: serverTimestamp()}));
 });
@@ -77,4 +78,27 @@ test('profile names, avatars and revision updates are bounded', async () => {
   await assertFails(updateDoc(doc(store, profilePath), {name: '', revision: 2, updatedAt: serverTimestamp()}));
   await assertFails(updateDoc(doc(store, profilePath), {avatarImage: 'x'.repeat(65537), revision: 2, updatedAt: serverTimestamp()}));
   await assertSucceeds(updateDoc(doc(store, profilePath), {name: 'Renamed', revision: 2, updatedAt: serverTimestamp()}));
+});
+
+test('watchlist removals survive offline saves and can be intentionally restored', async () => {
+  const store = await seed();
+  const path = profilePath + '/watchlist/synthetic-show-123';
+  const changedAtMs = Date.now() - 1000;
+  await assertSucceeds(setDoc(doc(store, path), {schemaVersion: 1, title: 'Synthetic show',
+    posterUrl: '', deleted: false, changedAtMs, revision: 1, updatedAt: serverTimestamp()}));
+  await assertFails(getDoc(doc(db('bob'), path)));
+  await assertSucceeds(updateDoc(doc(store, path), {deleted: true, changedAtMs: changedAtMs + 2, revision: 2, updatedAt: serverTimestamp()}));
+  await assertFails(updateDoc(doc(store, path), {deleted: false, changedAtMs: changedAtMs + 1, revision: 3, updatedAt: serverTimestamp()}));
+  await assertSucceeds(updateDoc(doc(store, path), {deleted: false, changedAtMs: changedAtMs + 3, revision: 3, updatedAt: serverTimestamp()}));
+});
+
+test('caption preferences are private and reject unknown values', async () => {
+  const store = await seed();
+  const path = profilePath + '/settings/playback';
+  const changedAtMs = Date.now() - 1000;
+  await assertSucceeds(setDoc(doc(store, path), {schemaVersion: 1, subtitleLanguage: 'ar',
+    subtitleSize: 'large', changedAtMs, revision: 1, updatedAt: serverTimestamp()}));
+  await assertFails(getDoc(doc(db('bob'), path)));
+  await assertFails(updateDoc(doc(store, path), {subtitleSize: 'huge', changedAtMs: changedAtMs + 1, revision: 2, updatedAt: serverTimestamp()}));
+  await assertSucceeds(updateDoc(doc(store, path), {subtitleLanguage: 'off', changedAtMs: changedAtMs + 1, revision: 2, updatedAt: serverTimestamp()}));
 });

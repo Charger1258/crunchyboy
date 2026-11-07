@@ -26,6 +26,13 @@ private struct AccountLibrary: View {
 
     var body: some View {
         RootScreen().environmentObject(library).environmentObject(sync)
+            .onAppear {
+                guard let userID else { return }
+                library.requestCloudSync = { [weak sync, weak library] in
+                    guard let sync, let library else { return }
+                    Task { await sync.sync(library: library, userID: userID) }
+                }
+            }
             .task(id: phase) {
                 if phase == .active, let userID { await sync.run(library: library, userID: userID) }
             }
@@ -178,6 +185,12 @@ struct ShowScreen: View {
                         CoverImage(url: title.poster).frame(width: 110, height: 165).clipShape(RoundedRectangle(cornerRadius: 12))
                         VStack(alignment: .leading, spacing: 12) {
                             Text(title.name).font(.title2.bold())
+                            Button {
+                                library.toggleSaved(title)
+                            } label: {
+                                Label(library.isSaved(title) ? "Saved" : "Save to watchlist",
+                                      systemImage: library.isSaved(title) ? "bookmark.fill" : "bookmark")
+                            }.buttonStyle(.bordered)
                             if let detail { Text("\(detail.seasons.filter { $0 > 0 }.count) seasons · \(detail.episodes.count) episodes").font(.caption).foregroundStyle(.secondary) }
                             if let current = library.continuing.first(where: { $0.title.id == title.id }) {
                                 Button(current.caughtUp ? "Watch again" : current.position > 0 ? "Resume episode" : "Play next episode") {

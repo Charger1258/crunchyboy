@@ -66,6 +66,19 @@ struct WatchLibraryScreen: View {
                         Button { play(PlaybackRequest(title: item.title, episode: item.episode, episodes: library.episodes(for: item.title))) } label: { row(item) }.buttonStyle(.plain)
                     }
                 }
+                if !library.watchlist.isEmpty {
+                    Text("Watchlist").font(.title2.bold())
+                    ForEach(library.watchlist) { title in
+                        NavigationLink(value: title) {
+                            HStack(spacing: 12) {
+                                CoverImage(url: title.poster).frame(width: 44, height: 64).clipShape(.rect(cornerRadius: 5))
+                                Text(title.name).foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                            }
+                        }.buttonStyle(.plain)
+                    }
+                }
             }.padding(16)
         }.background(AnimeTheme.background).navigationTitle("My Library").navigationBarTitleDisplayMode(.inline)
             .task(id: library.continuing.prefix(6).map(\.title.id)) {

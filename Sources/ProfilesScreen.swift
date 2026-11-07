@@ -64,7 +64,7 @@ struct SettingsScreen: View {
     @State private var showingAccount = false
     @State private var accountError: String?
     @State private var confirmingImport = false
-    @AppStorage("subtitleLanguage") private var subtitleLanguage = "en"
+    private var subtitleLanguage: String { library.captionSettings(profile: library.active.id).language }
     @AppStorage("autoNextEpisode") private var autoNextEpisode = false
     var body: some View {
         Form {
@@ -93,11 +93,13 @@ struct SettingsScreen: View {
                     VStack(alignment: .leading, spacing: 5) { Text(library.active.name).font(.title3.bold()); Text("Local profile").font(.caption).foregroundStyle(.secondary) }
                 }.padding(.vertical, 8)
                 Button { showProfiles() } label: { Label(library.active.name, systemImage: library.active.symbol) }
-                Text("Watch history is saved separately for each profile on this iPhone.").font(.footnote).foregroundStyle(.secondary)
+                Text(account.userID == nil ? "Sign in to sync your profiles, watch history and watchlist."
+                     : "Your profile syncs with devices signed into this account.").font(.footnote).foregroundStyle(.secondary)
                 if let error = library.storageError { Text(error).foregroundStyle(.red) }
             }
             Section("Playback") {
-                Picker("Subtitle language", selection: $subtitleLanguage) {
+                Picker("Subtitle language", selection: Binding(get: { subtitleLanguage },
+                    set: { library.setCaptionSettings(profile: library.active.id, language: $0) })) {
                     Text("English").tag("en"); Text("Arabic").tag("ar"); Text("Spanish").tag("es")
                     Text("French").tag("fr"); Text("German").tag("de"); Text("Portuguese").tag("pt"); Text("Off").tag("off")
                     if !["en", "ar", "es", "fr", "de", "pt", "off"].contains(subtitleLanguage) { Text(subtitleLanguage.uppercased()).tag(subtitleLanguage) }
@@ -123,8 +125,8 @@ struct SettingsScreen: View {
                 }.disabled(streamURL.isEmpty)
             }
             Section("About") {
-                LabeledContent("Version", value: "0.3 · Mobile preview")
-                Text("Structured seasons, episode previews, separate profiles, and native playback. Crunchyroll import and cross-device sync are not available yet.")
+                LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                Text("Sync profiles, watchlists, watch progress and subtitle preferences with Stream Anime TV.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }.scrollContentBackground(.hidden).background(AnimeTheme.background).navigationTitle("Account").navigationBarTitleDisplayMode(.inline)

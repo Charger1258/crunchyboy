@@ -27,6 +27,19 @@ struct ContinueItem: Identifiable {
     let caughtUp: Bool
 }
 
+struct SavedAnime: Codable {
+    let title: AnimeTitle
+    let changedAtMs: Int64
+    let deleted: Bool
+}
+
+struct CaptionSettings: Codable {
+    var language: String
+    var size: String
+    var changedAtMs: Int64
+    var scale: Double { size == "large" ? 1.25 : size == "small" ? 0.85 : 1 }
+}
+
 @MainActor final class LibraryStore: ObservableObject {
     static let defaultCloudProfile = UUID(uuidString: "00000000-0000-4000-8000-000000000001")!
     private struct State: Codable {
@@ -34,20 +47,38 @@ struct ContinueItem: Identifiable {
         var active: UUID
         var history: [String: [WatchRecord]] = [:]
         var episodes: [String: [Episode]] = [:]
+        var watchlists: [String: [String: SavedAnime]]? = nil
+        var captions: [String: CaptionSettings]? = nil
     }
     @Published private var state: State
     @Published private(set) var storageError: String?
     private let file: URL
+    private let accountID: String?
+    var requestCloudSync: (() -> Void)?
 
     init(file: URL? = nil, accountID: String? = nil) {
+        self.accountID = accountID
         let directory = URL.applicationSupportDirectory.appendingPathComponent("StreamAnime")
         let accountFile = accountID.map {
             let key = SHA256.hash(data: Data($0.utf8)).map { String(format: "%02x", $0) }.joined()
             return directory.appendingPathComponent("accounts").appendingPathComponent(key + ".json")
         }
         self.file = file ?? accountFile ?? directory.appendingPathComponent("library.json")
-        if let data = try? Data(contentsOf: self.file), let restored = try? JSONDecoder().decode(State.self, from: data),
+        if let data = try? Data(contentsOf: self.file), var restored = try? JSONDecoder().decode(State.self, from: data),
            !restored.profiles.isEmpty {
+            // Build 5 created the default account profile with a device-local UUID.
+            if accountID != nil, !restored.profiles.contains(where: { $0.id == Self.defaultCloudProfile }),
+               let first = restored.profiles.first, first.name == "Me" {
+                let id = Self.defaultCloudProfile
+                restored.profiles[0] = ViewerProfile(id: id, name: first.name, symbol: first.symbol, avatarImage: first.avatarImage)
+                if restored.active == first.id { restored.active = id }
+                let history = restored.history.removeValue(forKey: first.id.uuidString)
+                let watchlist = restored.watchlists?.removeValue(forKey: first.id.uuidString)
+                let captions = restored.captions?.removeValue(forKey: first.id.uuidString)
+                restored.history[id.uuidString] = history
+                restored.watchlists?[id.uuidString] = watchlist
+                restored.captions?[id.uuidString] = captions
+            }
             state = restored
         } else {
             let profile = ViewerProfile(id: accountID == nil ? UUID() : Self.defaultCloudProfile, name: "Me", symbol: "cat.fill")
@@ -59,6 +90,57 @@ struct ContinueItem: Identifiable {
     var active: ViewerProfile { state.profiles.first { $0.id == state.active } ?? state.profiles[0] }
     var records: [WatchRecord] { state.history[active.id.uuidString] ?? [] }
     func records(profile: UUID) -> [WatchRecord] { state.history[profile.uuidString] ?? [] }
+
+    func savedCaptionSettings(profile: UUID) -> CaptionSettings? { state.captions?[profile.uuidString] }
+    func captionSettings(profile: UUID) -> CaptionSettings {
+        if let saved = savedCaptionSettings(profile: profile) { return saved }
+        if accountID != nil { return CaptionSettings(language: "en", size: "normal", changedAtMs: 0) }
+        let defaults = UserDefaults.standard
+        let scale = defaults.double(forKey: "captionScale")
+        return CaptionSettings(language: defaults.string(forKey: "subtitleLanguage") ?? "en",
+                               size: scale >= 1.2 ? "large" : scale > 0 && scale < 1 ? "small" : "normal", changedAtMs: 0)
+    }
+    func setCaptionSettings(profile: UUID, language: String? = nil, size: String? = nil) {
+        var settings = captionSettings(profile: profile)
+        if let language {
+            let code = CaptionLanguage.normalize(language)
+            guard code.range(of: "^(off|[a-z]{2,3})$", options: .regularExpression) != nil else { return }
+            settings.language = code
+        }
+        if let size { settings.size = size }
+        settings.changedAtMs = max(settings.changedAtMs + 1, Int64(Date().timeIntervalSince1970 * 1000))
+        mergeCaptionSettings(settings, profile: profile)
+        requestCloudSync?()
+    }
+    func mergeCaptionSettings(_ settings: CaptionSettings, profile: UUID) {
+        var all = state.captions ?? [:]
+        guard (all[profile.uuidString]?.changedAtMs ?? -1) < settings.changedAtMs else { return }
+        all[profile.uuidString] = settings
+        state.captions = all
+        persist()
+    }
+
+    func savedEntries(profile: UUID) -> [String: SavedAnime] { state.watchlists?[profile.uuidString] ?? [:] }
+    var watchlist: [AnimeTitle] {
+        savedEntries(profile: active.id).values.filter { !$0.deleted }
+            .sorted { $0.changedAtMs > $1.changedAtMs }.map(\.title)
+    }
+    func isSaved(_ title: AnimeTitle) -> Bool { savedEntries(profile: active.id)[title.slug]?.deleted == false }
+    func toggleSaved(_ title: AnimeTitle) {
+        let now = max((savedEntries(profile: active.id)[title.slug]?.changedAtMs ?? 0) + 1,
+                      Int64(Date().timeIntervalSince1970 * 1000))
+        mergeSaved(SavedAnime(title: title, changedAtMs: now, deleted: isSaved(title)), profile: active.id)
+        requestCloudSync?()
+    }
+    func mergeSaved(_ entry: SavedAnime, profile: UUID) {
+        var entries = savedEntries(profile: profile)
+        guard (entries[entry.title.slug]?.changedAtMs ?? -1) < entry.changedAtMs else { return }
+        entries[entry.title.slug] = entry
+        var all = state.watchlists ?? [:]
+        all[profile.uuidString] = entries
+        state.watchlists = all
+        persist()
+    }
 
     func mergeCloudProfile(_ profile: ViewerProfile) {
         if let index = state.profiles.firstIndex(where: { $0.id == profile.id }) {
@@ -86,6 +168,8 @@ struct ContinueItem: Identifiable {
         for profile in guest.profiles where !state.profiles.contains(where: { $0.id == profile.id }) {
             state.profiles.append(profile)
             state.history[profile.id.uuidString] = guest.records(profile: profile.id)
+            for entry in guest.savedEntries(profile: profile.id).values { mergeSaved(entry, profile: profile.id) }
+            if let settings = guest.savedCaptionSettings(profile: profile.id) { mergeCaptionSettings(settings, profile: profile.id) }
         }
         for (id, episodes) in guest.state.episodes {
             state.episodes[id] = AnimeCatalog.merge(episodes, state.episodes[id] ?? [])

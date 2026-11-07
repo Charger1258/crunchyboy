@@ -73,6 +73,8 @@ import Foundation
                         ((previous["watchedAtMs"] as? NSNumber)?.int64Value ?? 0) >= watchedAt { continue }
                     try await commit(fields, to: collection.document(key), watchedAt: watchedAt)
                 }
+                try await syncWatchlist(library, profile: profile.id, document: document, userID: userID)
+                try await syncCaptions(library, profile: profile.id, document: document, userID: userID)
             }
             status = "Up to date"
         } catch is CancellationError {
@@ -87,14 +89,57 @@ import Foundation
         guard Auth.auth().currentUser?.uid == userID else { throw CancellationError() }
     }
 
-    private func commit(_ fields: [String: Any], to document: DocumentReference, watchedAt: Int64?) async throws {
+    private func syncWatchlist(_ library: LibraryStore, profile: UUID, document: DocumentReference, userID: String) async throws {
+        let collection = document.collection("watchlist")
+        let cacheKey = collection.path
+        var query: Query = collection.order(by: "updatedAt")
+        if let cursor = progressCursor[cacheKey] { query = query.whereField("updatedAt", isGreaterThanOrEqualTo: cursor) }
+        let snapshot = try await query.getDocuments(source: .server)
+        try checkAccount(userID)
+        var remote = progressCache[cacheKey] ?? [:]
+        for row in snapshot.documents {
+            let fields = row.data()
+            remote[row.documentID] = fields
+            if let stamp = fields["updatedAt"] as? Timestamp { progressCursor[cacheKey] = stamp }
+            guard let name = fields["title"] as? String, let changed = fields["changedAtMs"] as? NSNumber else { continue }
+            let title = AnimeTitle(slug: row.documentID, name: name, poster: SafeURL.https(fields["posterUrl"] as? String ?? ""))
+            library.mergeSaved(SavedAnime(title: title, changedAtMs: changed.int64Value,
+                                          deleted: fields["deleted"] as? Bool == true), profile: profile)
+        }
+        progressCache[cacheKey] = remote
+        for (slug, entry) in library.savedEntries(profile: profile) {
+            try checkAccount(userID)
+            guard slug.utf8.count <= 256, slug.range(of: "^[a-z0-9-]+-[0-9]+$", options: .regularExpression) != nil,
+                  ((remote[slug]?["changedAtMs"] as? NSNumber)?.int64Value ?? -1) < entry.changedAtMs else { continue }
+            let fields: [String: Any] = ["schemaVersion": 1, "title": String(entry.title.name.prefix(512)),
+                "posterUrl": String((entry.title.poster?.absoluteString ?? "").prefix(2048)),
+                "deleted": entry.deleted, "changedAtMs": entry.changedAtMs]
+            try await commit(fields, to: collection.document(slug), watchedAt: entry.changedAtMs, timestampField: "changedAtMs")
+        }
+    }
+
+    private func syncCaptions(_ library: LibraryStore, profile: UUID, document: DocumentReference, userID: String) async throws {
+        let reference = document.collection("settings").document("playback")
+        let snapshot = try await reference.getDocument(source: .server)
+        try checkAccount(userID)
+        let remoteTime = (snapshot.get("changedAtMs") as? NSNumber)?.int64Value ?? -1
+        if let language = snapshot.get("subtitleLanguage") as? String,
+           let size = snapshot.get("subtitleSize") as? String {
+            library.mergeCaptionSettings(CaptionSettings(language: language, size: size, changedAtMs: remoteTime), profile: profile)
+        }
+        guard let local = library.savedCaptionSettings(profile: profile), local.changedAtMs > remoteTime else { return }
+        try await commit(["schemaVersion": 1, "subtitleLanguage": local.language, "subtitleSize": local.size,
+                          "changedAtMs": local.changedAtMs], to: reference, watchedAt: local.changedAtMs, timestampField: "changedAtMs")
+    }
+
+    private func commit(_ fields: [String: Any], to document: DocumentReference, watchedAt: Int64?, timestampField: String = "watchedAtMs") async throws {
         _ = try await document.firestore.runTransaction { transaction, pointer in
             do {
                 let previous = try transaction.getDocument(document)
                 if previous.exists {
                     guard let watchedAt,
-                          previous.get("deleted") as? Bool != true,
-                          ((previous.get("watchedAtMs") as? NSNumber)?.int64Value ?? 0) < watchedAt else { return nil }
+                          (timestampField != "watchedAtMs" || previous.get("deleted") as? Bool != true),
+                          ((previous.get(timestampField) as? NSNumber)?.int64Value ?? 0) < watchedAt else { return nil }
                 }
                 var data = fields
                 data["revision"] = ((previous.get("revision") as? NSNumber)?.intValue ?? 0) + 1

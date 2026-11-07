@@ -3,9 +3,9 @@
 Status: both clients are registered in `crunchyboy-1be9d`. Email/password is
 enabled and the Firestore rules were published on the default Standard database
 in `nam5` (United States). The avatar index exemption is deployed. Both client
-configurations were retrieved with the Firebase CLI. The apps have sign-in
-screens and account-scoped local libraries. Device sign-in and cross-device
-synchronization still require verification and integration, respectively.
+configurations were retrieved with the Firebase CLI. Clients use account-scoped
+local libraries with Firestore sync for profiles, progress, saved shows, and
+subtitle language and size. Physical phone-to-TV handoff still needs verification.
 
 ## Project setup
 
@@ -41,6 +41,8 @@ Paths:
 ```
 users/{firebaseAuthUid}/profiles/{cloudProfileUuid}
 users/{firebaseAuthUid}/profiles/{cloudProfileUuid}/progress/{episodeKey}
+users/{firebaseAuthUid}/profiles/{cloudProfileUuid}/watchlist/{providerShowSlug}
+users/{firebaseAuthUid}/profiles/{cloudProfileUuid}/settings/playback
 ```
 
 An account owns its profiles. Profiles within the same account are household

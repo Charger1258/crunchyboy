@@ -25,6 +25,7 @@ struct PlaybackRequest: Identifiable {
     @Published private(set) var captionOptions: [CaptionOption] = []
     @Published private(set) var selectedCaption = "off"
     @Published private(set) var captionText = ""
+    @Published private(set) var captionScale = 1.0
     @Published private(set) var captionNotice: String?
     @Published private(set) var position: Double = 0
     @Published private(set) var duration: Double = 0
@@ -72,6 +73,7 @@ struct PlaybackRequest: Identifiable {
     }
 
     func start() {
+        captionScale = library.captionSettings(profile: profile).scale
         pendingSeek = nil
         diagnostic("start")
         shuttingDown = false
@@ -159,7 +161,7 @@ struct PlaybackRequest: Identifiable {
             endedObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     guard let self, token == self.generation else { return }
-                    self.completed = true; self.save()
+                    self.completed = true; self.save(); self.library.requestCloudSync?()
                     if UserDefaults.standard.bool(forKey: "autoNextEpisode"), self.nextEpisode != nil { self.playNext() }
                 }
             }
@@ -196,7 +198,7 @@ struct PlaybackRequest: Identifiable {
 
     func playNext() {
         guard let next = nextEpisode else { return }
-        completed = true; save(); episode = next; start()
+        completed = true; save(); library.requestCloudSync?(); episode = next; start()
     }
 
     private var pendingSeek: UUID?
@@ -238,7 +240,7 @@ struct PlaybackRequest: Identifiable {
             CaptionOption(id: "external-" + String(index), label: track.label, language: track.language, external: track)
         }
         captionOptions = external
-        let language = UserDefaults.standard.string(forKey: "subtitleLanguage") ?? "en"
+        let language = library.captionSettings(profile: profile).language
         if let preferred = CaptionLanguage.preferred(external, language: language) { selectCaption(preferred.id, remember: false) }
         Task {
             let group = try? await item.asset.loadMediaSelectionGroup(for: .legible)
@@ -258,7 +260,7 @@ struct PlaybackRequest: Identifiable {
                 if let group { item.select(nil, in: group) }
                 return
             }
-            let language = UserDefaults.standard.string(forKey: "subtitleLanguage") ?? "en"
+            let language = library.captionSettings(profile: profile).language
             if let preferred = CaptionLanguage.preferred(options, language: language) { selectCaption(preferred.id, remember: false) }
             else {
                 if let group { item.select(nil, in: group) }
@@ -272,10 +274,10 @@ struct PlaybackRequest: Identifiable {
         selectedCaption = id; cues = []; captionText = ""; captionNotice = nil
         if let captionGroup { player.currentItem?.select(nil, in: captionGroup) }
         guard let option = captionOptions.first(where: { $0.id == id }) else {
-            if remember { UserDefaults.standard.set("off", forKey: "subtitleLanguage") }
+            if remember { library.setCaptionSettings(profile: profile, language: "off") }
             return
         }
-        if remember { UserDefaults.standard.set(CaptionLanguage.normalize(option.language), forKey: "subtitleLanguage") }
+        if remember { library.setCaptionSettings(profile: profile, language: option.language) }
         if let index = option.nativeIndex, let captionGroup, captionGroup.options.indices.contains(index) {
             player.currentItem?.select(captionGroup.options[index], in: captionGroup); return
         }
@@ -320,10 +322,14 @@ struct PlaybackRequest: Identifiable {
         item.preferredPeakBitRate = 0
     }
     func togglePlay() {
-        if player.rate > 0 { player.pause(); isPlaying = false }
+        if player.rate > 0 { pause() }
         else { player.play(); isPlaying = true }
     }
-    func pause() { player.pause(); isPlaying = false }
+    func pause() { player.pause(); isPlaying = false; save(); library.requestCloudSync?() }
+    func setCaptionSize(_ size: String) {
+        library.setCaptionSettings(profile: profile, size: size)
+        captionScale = library.captionSettings(profile: profile).scale
+    }
     func setSubtitleOffset(_ seconds: Double) {
         subtitleOffset = seconds
         captionText = SubtitleDocument.visible(cues, at: position - subtitleOffset)
@@ -365,7 +371,7 @@ struct PlaybackRequest: Identifiable {
 
     func close() {
         diagnostic("close")
-        save(); shuttingDown = true; generation = UUID()
+        save(); library.requestCloudSync?(); shuttingDown = true; generation = UUID()
         task?.cancel(); startupTimeout?.cancel(); captionTask?.cancel(); player.pause(); player.replaceCurrentItem(with: nil)
         observation = nil
         if let timeObserver { player.removeTimeObserver(timeObserver); self.timeObserver = nil }
