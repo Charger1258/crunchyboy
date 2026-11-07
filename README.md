@@ -60,7 +60,7 @@ playback and history run on the iPhone. No hosted streaming backend is required.
   screenshots are exported under build/artifacts/screenshots; catalog screenshots use
   live data, never title-specific substitutions or test mappings.
 
-Still outside this pass: Crunchyroll sign-in/import and imported avatars, TV/phone sync,
+Still outside this pass: native iPhone Crunchyroll sign-in/import,
 AnimeGG MP4 fallback, picture-in-picture, and full offline/paginated library browsing.
 Live streams and external captions still require physical iPhone testing. Automated
 parser/navigation tests are not proof of working provider playback.
@@ -118,3 +118,21 @@ and exports screenshots. Physical-device playback is a separate required check.
 
 The test suite covers HTML identity checks, episode merging, resolver configuration decoding,
 playlist URI rewriting, loopback binding, profile isolation, persistence and next-up behavior.
+
+## Account sync
+
+Firebase email/password sign-in is optional. Each account has a separate on-device library;
+signing out returns to the original guest library. Settings provides an explicit guest-profile
+copy action. Sign in with the same account on the TV and phone to share profiles and profile
+pictures, episode positions/completion, saved shows, and subtitle language/text size.
+
+The foreground sync polls every 30 seconds and also requests writes when playback is paused,
+closed, or advanced, and when saved shows or caption settings change. Offline changes remain
+on the device and retry when the app is next active. Newer watched timestamps win, including
+intentional seeks backwards. Watchlist removals retain tombstones so old offline saves cannot
+restore them. Each profile and account has separate local history and preferences.
+
+`firebase/` contains the owner-only Firestore rules and emulator tests. Run `npm ci` then
+`npm test` there with Java 21+. The mobile app bundles public Firebase client configuration;
+passwords and admin credentials are never placed in the repository. A real TV/phone handoff
+still needs device verification after installing both updated builds.
